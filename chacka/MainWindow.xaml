@@ -1,0 +1,69 @@
+﻿<Window x:Class="chacka.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:chacka"
+        mc:Ignorable="d"
+        Title="Podcast Live Translator" Height="600" Width="1050"
+        Closing="Window_Closing">
+    <DockPanel>
+        <!-- Toolbar -->
+        <ToolBarTray DockPanel.Dock="Top">
+            <ToolBar Band="0" BandIndex="0">
+                <TextBlock Text="Device:" VerticalAlignment="Center" Margin="4,0"/>
+                <ComboBox x:Name="DevicesCombo" Width="300"
+                          DisplayMemberPath="Name" SelectedValuePath="Id"/>
+                <Button Content="⟳" ToolTip="Refresh devices" Click="RefreshDevices_Click" Padding="6,2"/>
+                <Separator/>
+                <Button x:Name="StartBtn" Content="▶ Start" Click="Start_Click" Padding="8,2"/>
+                <Button x:Name="StopBtn"  Content="⏹ Stop"  Click="Stop_Click"  Padding="8,2" IsEnabled="False"/>
+                <Separator/>
+                <TextBlock Text="From:" VerticalAlignment="Center" Margin="4,0"/>
+                <ComboBox x:Name="SourceLangCombo" Width="100"
+                          DisplayMemberPath="Name" SelectedValuePath="Code"/>
+                <TextBlock Text="→" VerticalAlignment="Center" Margin="6,0" FontWeight="Bold"/>
+                <TextBlock Text="To:" VerticalAlignment="Center" Margin="4,0"/>
+                <ComboBox x:Name="TargetLangCombo" Width="100"
+                          DisplayMemberPath="Name" SelectedValuePath="Code"/>
+            </ToolBar>
+        </ToolBarTray>
+
+        <!-- Status bar -->
+        <StatusBar DockPanel.Dock="Bottom">
+            <StatusBarItem>
+                <TextBlock x:Name="StatusText" Text="Ready"/>
+            </StatusBarItem>
+            <Separator/>
+            <StatusBarItem>
+                <TextBlock x:Name="ModelStatusText" Text="Model: not loaded"/>
+            </StatusBarItem>
+        </StatusBar>
+
+        <!-- Transcript + Translation -->
+        <Grid Margin="4">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <DockPanel Grid.Column="0">
+                <TextBlock DockPanel.Dock="Top" Text="Transcript (source)" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                <TextBox x:Name="TranscriptBox" IsReadOnly="True" TextWrapping="Wrap"
+                         VerticalScrollBarVisibility="Auto" AcceptsReturn="True"
+                         Background="#FAFAFA"/>
+            </DockPanel>
+
+            <GridSplitter Grid.Column="1" Width="6" HorizontalAlignment="Center"
+                          VerticalAlignment="Stretch" Background="LightGray"/>
+
+            <DockPanel Grid.Column="2">
+                <TextBlock DockPanel.Dock="Top" Text="Translation" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                <TextBox x:Name="TranslationBox" IsReadOnly="True" TextWrapping="Wrap"
+                         VerticalScrollBarVisibility="Auto" AcceptsReturn="True"
+                         Background="#FAFAFA"/>
+            </DockPanel>
+        </Grid>
+    </DockPanel>
+</Window>
