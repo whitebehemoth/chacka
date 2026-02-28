@@ -1,4 +1,5 @@
 ﻿using System.IO;
+using System.Collections.Concurrent;
 using System.Windows;
 using chacka.Options;
 using chacka.Services;
@@ -16,7 +17,8 @@ public partial class MainWindow : Window
     private readonly WhisperRecognizer _recognizer = new();
     private readonly TranslationService _translator;
     private readonly LanguageInfo[] _languages;
-    private bool _isProcessing;
+    private readonly ConcurrentQueue<float[]> _pendingChunks = new();
+    private int _processingQueue;
 
     public MainWindow()
     {
@@ -24,6 +26,10 @@ public partial class MainWindow : Window
 
         _settings = App.Configuration.GetSection("AppSettings").Get<AppSettings>() ?? new AppSettings();
         _capture.ChunkDurationSeconds = _settings.ChunkDurationSeconds;
+        _capture.PauseDurationSeconds = _settings.PauseDurationSeconds;
+        _capture.MinChunkDurationBeforePauseFlushSeconds = _settings.MinChunkDurationBeforePauseFlushSeconds;
+        _capture.SpeechStartThreshold = _settings.SpeechStartThreshold;
+        _capture.SpeechEndThreshold = _settings.SpeechEndThreshold;
         _translator = new TranslationService(_settings.Translation);
 
         _languages = new[]
@@ -93,50 +99,59 @@ public partial class MainWindow : Window
         }
     }
 
-    private async void OnAudioChunkReady(float[] samples)
+    private void OnAudioChunkReady(float[] samples)
     {
-        if (_isProcessing) return;
-        _isProcessing = true;
+        _pendingChunks.Enqueue(samples);
+        _ = ProcessChunkQueueAsync();
+    }
+
+    private async Task ProcessChunkQueueAsync()
+    {
+        if (Interlocked.Exchange(ref _processingQueue, 1) == 1)
+            return;
 
         try
         {
-            string sourceLang = Dispatcher.Invoke(() =>
-                (SourceLangCombo.SelectedItem as LanguageInfo)?.Code ?? "en");
-
-            LanguageInfo? targetLang = Dispatcher.Invoke(() =>
-                TargetLangCombo.SelectedItem as LanguageInfo);
-
-            string sourceFullName = Dispatcher.Invoke(() =>
-                (SourceLangCombo.SelectedItem as LanguageInfo)?.Name ?? "English");
-
-            Dispatcher.Invoke(() => StatusText.Text = "Recognizing…");
-
-            string text = await _recognizer.RecognizeAsync(samples, sourceLang);
-
-            if (!string.IsNullOrWhiteSpace(text))
+            while (_pendingChunks.TryDequeue(out var samples))
             {
-                Dispatcher.Invoke(() =>
+                string sourceLang = Dispatcher.Invoke(() =>
+                    (SourceLangCombo.SelectedItem as LanguageInfo)?.Code ?? "en");
+
+                LanguageInfo? targetLang = Dispatcher.Invoke(() =>
+                    TargetLangCombo.SelectedItem as LanguageInfo);
+
+                string sourceFullName = Dispatcher.Invoke(() =>
+                    (SourceLangCombo.SelectedItem as LanguageInfo)?.Name ?? "English");
+
+                Dispatcher.Invoke(() => StatusText.Text = "Recognizing…");
+
+                string text = await _recognizer.RecognizeAsync(samples, sourceLang);
+
+                if (!string.IsNullOrWhiteSpace(text))
                 {
-                    TranscriptBox.AppendText(text + Environment.NewLine);
-                    TranscriptBox.ScrollToEnd();
-                });
-
-                if (targetLang != null && targetLang.Code != sourceLang)
-                {
-                    Dispatcher.Invoke(() => StatusText.Text = "Translating…");
-
-                    string translated = await _translator.TranslateAsync(
-                        text, sourceFullName, targetLang.Name);
-
                     Dispatcher.Invoke(() =>
                     {
-                        TranslationBox.AppendText(translated + Environment.NewLine);
-                        TranslationBox.ScrollToEnd();
+                        TranscriptBox.AppendText(text + Environment.NewLine);
+                        TranscriptBox.ScrollToEnd();
                     });
-                }
-            }
 
-            Dispatcher.Invoke(() => StatusText.Text = _capture.GetStatus());
+                    if (targetLang != null && targetLang.Code != sourceLang)
+                    {
+                        Dispatcher.Invoke(() => StatusText.Text = "Translating…");
+
+                        string translated = await _translator.TranslateAsync(
+                            text, sourceFullName, targetLang.Name);
+
+                        Dispatcher.Invoke(() =>
+                        {
+                            TranslationBox.AppendText(translated + Environment.NewLine);
+                            TranslationBox.ScrollToEnd();
+                        });
+                    }
+                }
+
+                Dispatcher.Invoke(() => StatusText.Text = _capture.GetStatus());
+            }
         }
         catch (Exception ex)
         {
@@ -144,7 +159,10 @@ public partial class MainWindow : Window
         }
         finally
         {
-            _isProcessing = false;
+            Interlocked.Exchange(ref _processingQueue, 0);
+
+            if (!_pendingChunks.IsEmpty)
+                _ = ProcessChunkQueueAsync();
         }
     }
 

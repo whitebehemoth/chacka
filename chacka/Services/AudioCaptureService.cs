@@ -21,14 +21,33 @@ public class AudioCaptureService : IDisposable
     private WaveFormat? _captureFormat;
     private System.Threading.Timer? _chunkTimer;
     private float _lastPeak;
+    private float _lastRms;
     private bool _isCapturing;
+    private DateTime _lastSoundTime = DateTime.UtcNow;
+    private bool _silenceFlushPending;
+    private bool _inSpeech;
 
     /// <summary>Fired on a background thread with 16 kHz mono float32 samples.</summary>
     public event Action<float[]>? AudioChunkReady;
     public event Action<string>? StatusChanged;
 
     /// <summary>How many seconds of audio to buffer before flushing to STT.</summary>
-    public double ChunkDurationSeconds { get; set; } = 5.0;
+    public double ChunkDurationSeconds { get; set; } = 10.0;
+
+    /// <summary>How many seconds of silence must pass before flushing mid-chunk.</summary>
+    public double PauseDurationSeconds { get; set; } = 0.8;
+
+    /// <summary>Minimum chunk duration before pause-based flush is allowed.</summary>
+    public double MinChunkDurationBeforePauseFlushSeconds { get; set; } = 1.2;
+
+    /// <summary>Amplitude below which audio is considered silence.</summary>
+    public float SilenceThreshold { get; set; } = 0.002f;
+
+    /// <summary>RMS threshold for entering speech state.</summary>
+    public float SpeechStartThreshold { get; set; } = 0.0030f;
+
+    /// <summary>RMS threshold for leaving speech state (hysteresis).</summary>
+    public float SpeechEndThreshold { get; set; } = 0.0015f;
 
     public AudioCaptureService()
     {
@@ -71,6 +90,10 @@ public class AudioCaptureService : IDisposable
             TimeSpan.FromSeconds(ChunkDurationSeconds),
             TimeSpan.FromSeconds(ChunkDurationSeconds));
 
+        _lastSoundTime = DateTime.UtcNow;
+        _silenceFlushPending = false;
+        _inSpeech = false;
+
         _capture.StartRecording();
         _isCapturing = true;
         StatusChanged?.Invoke($"Capturing: {_device.FriendlyName}");
@@ -89,6 +112,7 @@ public class AudioCaptureService : IDisposable
         }
 
         FlushBuffer();
+        _silenceFlushPending = false;
         _isCapturing = false;
         StatusChanged?.Invoke("Stopped");
     }
@@ -97,7 +121,12 @@ public class AudioCaptureService : IDisposable
     {
         if (e.BytesRecorded == 0) return;
 
-        lock (_lock) { _buffer.Write(e.Buffer, 0, e.BytesRecorded); }
+        double bufferedSeconds;
+        lock (_lock)
+        {
+            _buffer.Write(e.Buffer, 0, e.BytesRecorded);
+            bufferedSeconds = GetBufferedSecondsNoLock();
+        }
 
         // Update peak
         float peak = 0f;
@@ -107,6 +136,34 @@ public class AudioCaptureService : IDisposable
             if (abs > peak) peak = abs;
         }
         _lastPeak = peak;
+        _lastRms = ComputeRms(e.Buffer, e.BytesRecorded);
+
+        if (PauseDurationSeconds > 0)
+        {
+            var now = DateTime.UtcNow;
+            bool speechDetected = _inSpeech
+                ? _lastRms >= SpeechEndThreshold
+                : _lastRms >= SpeechStartThreshold;
+
+            if (speechDetected)
+            {
+                _inSpeech = true;
+                _lastSoundTime = now;
+                _silenceFlushPending = false;
+            }
+            else if (!_silenceFlushPending
+                     && (now - _lastSoundTime).TotalSeconds >= PauseDurationSeconds
+                     && bufferedSeconds >= MinChunkDurationBeforePauseFlushSeconds)
+            {
+                _inSpeech = false;
+                _silenceFlushPending = true;
+                FlushBuffer();
+            }
+            else
+            {
+                _inSpeech = false;
+            }
+        }
     }
 
     private void OnRecordingStopped(object? sender, StoppedEventArgs e)
@@ -139,7 +196,7 @@ public class AudioCaptureService : IDisposable
                 float a = Math.Abs(s);
                 if (a > maxAbs) maxAbs = a;
             }
-            if (maxAbs < 0.002f) return;
+            if (maxAbs < SilenceThreshold) return;
 
             AudioChunkReady?.Invoke(samples);
         }
@@ -173,11 +230,34 @@ public class AudioCaptureService : IDisposable
         return result.ToArray();
     }
 
+    private static float ComputeRms(byte[] buffer, int bytesRecorded)
+    {
+        if (bytesRecorded <= 0) return 0f;
+
+        double sumSquares = 0;
+        int samples = 0;
+        for (int i = 0; i + 4 <= bytesRecorded; i += 4)
+        {
+            float value = BitConverter.ToSingle(buffer, i);
+            sumSquares += value * value;
+            samples++;
+        }
+
+        return samples == 0 ? 0f : (float)Math.Sqrt(sumSquares / samples);
+    }
+
+    private double GetBufferedSecondsNoLock()
+    {
+        return _captureFormat == null
+            ? 0
+            : (double)_buffer.Length / _captureFormat.AverageBytesPerSecond;
+    }
+
     public string GetStatus()
     {
         string device = _device?.FriendlyName ?? "None";
         return _isCapturing
-            ? $"Capturing: {device} | Peak: {_lastPeak:F4}"
+            ? $"Capturing: {device} | Peak: {_lastPeak:F4} | Rms: {_lastRms:F4}"
             : $"Stopped | Device: {device}";
     }
 
