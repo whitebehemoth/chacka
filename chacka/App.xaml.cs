@@ -9,15 +9,13 @@ namespace chacka
     /// </summary>
     public partial class App : Application
     {
-        public static string UserSettingsPath { get; } = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "chacka",
-            "user-settings.json");
+        public static string AppSettingsPath { get; } = Path.Combine(
+            AppContext.BaseDirectory,
+            "appsettings.json");
 
         public static IConfigurationRoot Configuration { get; } = new ConfigurationBuilder()
             .SetBasePath(AppContext.BaseDirectory)
-            .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
-            .AddJsonFile(UserSettingsPath, optional: true, reloadOnChange: true)
+            .AddJsonFile(AppSettingsPath, optional: true, reloadOnChange: true)
             .AddUserSecrets<App>(optional: true)
             .Build();
     }

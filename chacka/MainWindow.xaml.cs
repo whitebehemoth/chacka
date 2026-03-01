@@ -2,6 +2,7 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -327,30 +328,49 @@ public partial class MainWindow : Window
 
     private void SaveUserSettings()
     {
-        var root = new
-        {
-            AppSettings = new
-            {
-                _settings.ChunkDurationSeconds,
-                _settings.PauseDurationSeconds,
-                _settings.MinChunkDurationBeforePauseFlushSeconds,
-                _settings.SpeechStartThreshold,
-                _settings.SpeechEndThreshold,
-                _settings.DefaultSourceLanguage,
-                _settings.DefaultTargetLanguage,
-                _settings.WhisperModelType,
-                _settings.OutputFontSize,
-                _settings.RecordAudioEnabled,
-                _settings.UiLanguage
-            }
-        };
+        string path = App.AppSettingsPath;
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
 
-        string dir = Path.GetDirectoryName(App.UserSettingsPath)!;
-        Directory.CreateDirectory(dir);
-        File.WriteAllText(App.UserSettingsPath, JsonSerializer.Serialize(root, new JsonSerializerOptions
+        JsonObject root = new();
+        if (File.Exists(path))
         {
-            WriteIndented = true
-        }));
+            try
+            {
+                root = JsonNode.Parse(File.ReadAllText(path)) as JsonObject ?? new JsonObject();
+            }
+            catch
+            {
+                root = new JsonObject();
+            }
+        }
+
+        JsonObject appSettings = root["AppSettings"] as JsonObject ?? new JsonObject();
+
+        appSettings["ChunkDurationSeconds"] = _settings.ChunkDurationSeconds;
+        appSettings["PauseDurationSeconds"] = _settings.PauseDurationSeconds;
+        appSettings["MinChunkDurationBeforePauseFlushSeconds"] = _settings.MinChunkDurationBeforePauseFlushSeconds;
+        appSettings["SpeechStartThreshold"] = _settings.SpeechStartThreshold;
+        appSettings["SpeechEndThreshold"] = _settings.SpeechEndThreshold;
+        appSettings["DefaultSourceLanguage"] = _settings.DefaultSourceLanguage;
+        appSettings["DefaultTargetLanguage"] = _settings.DefaultTargetLanguage;
+        appSettings["WhisperModelType"] = _settings.WhisperModelType;
+        appSettings["OutputFontSize"] = _settings.OutputFontSize;
+        appSettings["RecordAudioEnabled"] = _settings.RecordAudioEnabled;
+        appSettings["UiLanguage"] = _settings.UiLanguage;
+
+        if (appSettings["Translation"] is null)
+        {
+            appSettings["Translation"] = new JsonObject
+            {
+                ["ApiUrl"] = _settings.Translation.ApiUrl,
+                ["ModelName"] = _settings.Translation.ModelName,
+                ["ApiKey"] = _settings.Translation.ApiKey,
+                ["Temperature"] = _settings.Translation.Temperature
+            };
+        }
+
+        root["AppSettings"] = appSettings;
+        File.WriteAllText(path, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
     }
 
     private void OnAudioChunkReady(float[] samples)
