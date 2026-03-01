@@ -1,5 +1,7 @@
 using System.IO;
+using System.Threading;
 using NAudio.CoreAudioApi;
+using NAudio.MediaFoundation;
 using NAudio.Wave;
 using NAudio.Wave.SampleProviders;
 
@@ -26,9 +28,16 @@ public class AudioCaptureService : IDisposable
     private DateTime _lastSoundTime = DateTime.UtcNow;
     private bool _silenceFlushPending;
     private bool _inSpeech;
+    private WaveFileWriter? _sessionWriter;
+    private string? _sessionTempWavPath;
+    private string? _lastRecordingPath;
+    private readonly object _cleanupLock = new();
+    private readonly HashSet<string> _pendingTempCleanup = new(StringComparer.OrdinalIgnoreCase);
+    private System.Threading.Timer? _cleanupTimer;
 
     /// <summary>Fired on a background thread with 16 kHz mono float32 samples.</summary>
     public event Action<float[]>? AudioChunkReady;
+    public event Action<string>? RecordingSaved;
     public event Action<string>? StatusChanged;
 
     /// <summary>How many seconds of audio to buffer before flushing to STT.</summary>
@@ -49,9 +58,34 @@ public class AudioCaptureService : IDisposable
     /// <summary>RMS threshold for leaving speech state (hysteresis).</summary>
     public float SpeechEndThreshold { get; set; } = 0.0015f;
 
+    /// <summary>Record full captured session into a single MP3 file between Start/Stop.</summary>
+    public bool SessionRecordingEnabled { get; set; }
+
+    public string? LastRecordingPath => _lastRecordingPath;
+    public bool IsCapturing => _isCapturing;
+
     public AudioCaptureService()
     {
         _device = GetDefaultDevice();
+    }
+
+    public static string GetRecordsDirectory()
+    {
+        return Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+            "Chacka meeting recordings");
+    }
+
+    public static void CleanupStaleTempFiles()
+    {
+        string dir = GetRecordsDirectory();
+        if (!Directory.Exists(dir)) return;
+
+        foreach (string file in Directory.EnumerateFiles(dir, "tmp-*.wav"))
+        {
+            try { File.Delete(file); }
+            catch { }
+        }
     }
 
     public static List<AudioDeviceInfo> ListRenderDevices()
@@ -83,6 +117,8 @@ public class AudioCaptureService : IDisposable
         _capture.DataAvailable += OnDataAvailable;
         _capture.RecordingStopped += OnRecordingStopped;
 
+        StartSessionRecording();
+
         lock (_lock) { _buffer = new MemoryStream(); }
 
         _chunkTimer = new System.Threading.Timer(
@@ -112,6 +148,7 @@ public class AudioCaptureService : IDisposable
         }
 
         FlushBuffer();
+        StopSessionRecording();
         _silenceFlushPending = false;
         _isCapturing = false;
         StatusChanged?.Invoke("Stopped");
@@ -125,6 +162,7 @@ public class AudioCaptureService : IDisposable
         lock (_lock)
         {
             _buffer.Write(e.Buffer, 0, e.BytesRecorded);
+            _sessionWriter?.Write(e.Buffer, 0, e.BytesRecorded);
             bufferedSeconds = GetBufferedSecondsNoLock();
         }
 
@@ -253,6 +291,147 @@ public class AudioCaptureService : IDisposable
             : (double)_buffer.Length / _captureFormat.AverageBytesPerSecond;
     }
 
+    private void StartSessionRecording()
+    {
+        _lastRecordingPath = null;
+        _sessionWriter?.Dispose();
+        _sessionWriter = null;
+        _sessionTempWavPath = null;
+
+        if (!SessionRecordingEnabled || _captureFormat == null)
+            return;
+
+        try
+        {
+            string recordsDir = GetRecordsDirectory();
+            Directory.CreateDirectory(recordsDir);
+
+            _sessionTempWavPath = Path.Combine(recordsDir, $"tmp-{Guid.NewGuid():N}.wav");
+            _sessionWriter = new WaveFileWriter(_sessionTempWavPath, _captureFormat);
+        }
+        catch (Exception ex)
+        {
+            _sessionWriter = null;
+            _sessionTempWavPath = null;
+            StatusChanged?.Invoke($"Record init error: {ex.Message}");
+        }
+    }
+
+    private void StopSessionRecording()
+    {
+        string? tempWavPath;
+        lock (_lock)
+        {
+            _sessionWriter?.Dispose();
+            _sessionWriter = null;
+            tempWavPath = _sessionTempWavPath;
+            _sessionTempWavPath = null;
+        }
+
+        if (string.IsNullOrWhiteSpace(tempWavPath) || !File.Exists(tempWavPath))
+            return;
+
+        try
+        {
+            string recordsDir = Path.GetDirectoryName(tempWavPath)!;
+            string mp3Path = Path.Combine(recordsDir, $"meeting-{DateTime.Now:yyyyMMdd-HHmmss}.mp3");
+
+            using var reader = new WaveFileReader(tempWavPath);
+            MediaFoundationEncoder.EncodeToMp3(reader, mp3Path);
+
+            _lastRecordingPath = mp3Path;
+            RecordingSaved?.Invoke(mp3Path);
+
+            TryDeleteFileWithRetry(tempWavPath);
+        }
+        catch (Exception ex)
+        {
+            StatusChanged?.Invoke($"Record save error: {ex.Message}");
+        }
+    }
+
+    private void TryDeleteFileWithRetry(string filePath)
+    {
+        for (int i = 0; i < 8; i++)
+        {
+            try
+            {
+                if (File.Exists(filePath))
+                    File.Delete(filePath);
+                return;
+            }
+            catch (IOException)
+            {
+                Thread.Sleep(80);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                Thread.Sleep(80);
+            }
+        }
+
+        ScheduleTempCleanup(filePath);
+        StatusChanged?.Invoke($"Temp file is locked. Scheduled cleanup: {filePath}");
+    }
+
+    private void ScheduleTempCleanup(string filePath)
+    {
+        lock (_cleanupLock)
+        {
+            _pendingTempCleanup.Add(filePath);
+            _cleanupTimer ??= new System.Threading.Timer(OnCleanupTimer, null,
+                TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(10));
+        }
+    }
+
+    private void OnCleanupTimer(object? state)
+    {
+        List<string> files;
+        lock (_cleanupLock)
+        {
+            files = _pendingTempCleanup.ToList();
+        }
+
+        foreach (string file in files)
+        {
+            try
+            {
+                if (File.Exists(file))
+                    File.Delete(file);
+
+                lock (_cleanupLock)
+                {
+                    _pendingTempCleanup.Remove(file);
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        lock (_cleanupLock)
+        {
+            if (_pendingTempCleanup.Count == 0)
+            {
+                _cleanupTimer?.Dispose();
+                _cleanupTimer = null;
+            }
+        }
+    }
+
+    private void FlushPendingCleanup()
+    {
+        OnCleanupTimer(null);
+        CleanupStaleTempFiles();
+
+        lock (_cleanupLock)
+        {
+            _cleanupTimer?.Dispose();
+            _cleanupTimer = null;
+            _pendingTempCleanup.Clear();
+        }
+    }
+
     public string GetStatus()
     {
         string device = _device?.FriendlyName ?? "None";
@@ -274,6 +453,7 @@ public class AudioCaptureService : IDisposable
     public void Dispose()
     {
         Stop();
+        FlushPendingCleanup();
         GC.SuppressFinalize(this);
     }
 }

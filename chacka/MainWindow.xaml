@@ -5,65 +5,92 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:chacka"
         mc:Ignorable="d"
-        Title="Podcast Live Translator" Height="600" Width="1050"
+        Title="Podcast Live Translator" Height="568" Width="1170"
         Closing="Window_Closing">
-    <DockPanel>
-        <!-- Toolbar -->
-        <ToolBarTray DockPanel.Dock="Top">
-            <ToolBar Band="0" BandIndex="0">
-                <TextBlock Text="Device:" VerticalAlignment="Center" Margin="4,0"/>
-                <ComboBox x:Name="DevicesCombo" Width="300"
+  <DockPanel>
+    <!-- Toolbar -->
+    <ToolBarTray DockPanel.Dock="Top">
+      <ToolBar Band="0" BandIndex="0">
+        <TextBlock x:Name="DeviceLabel" Text="Device:" VerticalAlignment="Center" Margin="4,0"/>
+        <ComboBox x:Name="DevicesCombo" Width="300"
                           DisplayMemberPath="Name" SelectedValuePath="Id"/>
-                <Button Content="⟳" ToolTip="Refresh devices" Click="RefreshDevices_Click" Padding="6,2"/>
-                <Separator/>
-                <Button x:Name="StartBtn" Content="▶ Start" Click="Start_Click" Padding="8,2"/>
-                <Button x:Name="StopBtn"  Content="⏹ Stop"  Click="Stop_Click"  Padding="8,2" IsEnabled="False"/>
-                <Separator/>
-                <TextBlock Text="From:" VerticalAlignment="Center" Margin="4,0"/>
-                <ComboBox x:Name="SourceLangCombo" Width="100"
+        <Button x:Name="RefreshDevicesBtn" Content="⟳" ToolTip="Refresh devices" Click="RefreshDevices_Click" Padding="6,2"/>
+        <Separator/>
+        <Button x:Name="StartBtn" Content="▶ Start" Click="Start_Click" Padding="8,2" IsDefault="True"/>
+        <Button x:Name="StopBtn"  Content="⏹ Stop"  Click="Stop_Click"  Padding="8,2" IsEnabled="False" IsCancel="True"/>
+        <TextBlock x:Name="RecordIndicator" Text="●" Margin="8,0,4,0" VerticalAlignment="Center" FontSize="16" Foreground="Gray"/>
+        <CheckBox x:Name="RecordAudioCheckBox" Content="Record"
+                  Checked="RecordAudioCheckBox_Changed" Unchecked="RecordAudioCheckBox_Changed" Style="{x:Null}" IsChecked="False"/>
+        <Button x:Name="OpenRecordFolderBtn" Content="📂" Padding="6,2" Click="OpenRecordFolderBtn_Click"/>
+        <Separator/>
+        <TextBlock x:Name="FromLabel" Text="From:" VerticalAlignment="Center" Margin="4,0"/>
+        <ComboBox x:Name="SourceLangCombo" Width="100"
                           DisplayMemberPath="Name" SelectedValuePath="Code"/>
-                <TextBlock Text="→" VerticalAlignment="Center" Margin="6,0" FontWeight="Bold"/>
-                <TextBlock Text="To:" VerticalAlignment="Center" Margin="4,0"/>
-                <ComboBox x:Name="TargetLangCombo" Width="100"
+        <TextBlock Text="→" VerticalAlignment="Center" Margin="6,0" FontWeight="Bold"/>
+        <TextBlock x:Name="ToLabel" Text="To:" VerticalAlignment="Center" Margin="4,0"/>
+        <ComboBox x:Name="TargetLangCombo" Width="100"
                           DisplayMemberPath="Name" SelectedValuePath="Code"/>
-            </ToolBar>
-        </ToolBarTray>
+        <Separator/>
+        <TextBlock x:Name="UiLangLabel" Text="UI:" VerticalAlignment="Center" Margin="4,0"/>
+        <ComboBox x:Name="UiLanguageCombo" Width="49" SelectionChanged="UiLanguageCombo_SelectionChanged"/>
+      </ToolBar>
+    </ToolBarTray>
 
-        <!-- Status bar -->
-        <StatusBar DockPanel.Dock="Bottom">
-            <StatusBarItem>
-                <TextBlock x:Name="StatusText" Text="Ready"/>
-            </StatusBarItem>
-            <Separator/>
-            <StatusBarItem>
-                <TextBlock x:Name="ModelStatusText" Text="Model: not loaded"/>
-            </StatusBarItem>
-        </StatusBar>
+    <StatusBar DockPanel.Dock="Bottom">
+      <StatusBarItem>
+        <StackPanel Orientation="Horizontal">
+          <TextBlock x:Name="PauseDurationLabel" Text="Pause(s):" VerticalAlignment="Center" Margin="0,0,4,0"/>
+          <Slider x:Name="PauseDurationSlider" Width="120" Minimum="0.30" Maximum="2.00" TickFrequency="0.05"
+                            IsSnapToTickEnabled="True" ValueChanged="SettingsSlider_ValueChanged"/>
+          <TextBlock x:Name="PauseDurationValueText" Width="38" Margin="4,0,12,0" VerticalAlignment="Center"/>
 
-        <!-- Transcript + Translation -->
-        <Grid Margin="4">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="*"/>
-            </Grid.ColumnDefinitions>
+          <TextBlock x:Name="MinChunkLabel" Text="Min chunk(s):" VerticalAlignment="Center" Margin="0,0,4,0"/>
+          <Slider x:Name="MinChunkBeforePauseSlider" Width="120" Minimum="0.50" Maximum="3.00" TickFrequency="0.10"
+                            IsSnapToTickEnabled="True" ValueChanged="SettingsSlider_ValueChanged"/>
+          <TextBlock x:Name="MinChunkBeforePauseValueText" Width="38" Margin="4,0,12,0" VerticalAlignment="Center"/>
 
-            <DockPanel Grid.Column="0">
-                <TextBlock DockPanel.Dock="Top" Text="Transcript (source)" FontWeight="SemiBold" Margin="0,0,0,4"/>
-                <TextBox x:Name="TranscriptBox" IsReadOnly="True" TextWrapping="Wrap"
+          <TextBlock x:Name="SpeechStartLabel" Text="Start thr:" VerticalAlignment="Center" Margin="0,0,4,0"/>
+          <Slider x:Name="SpeechStartThresholdSlider" Width="120" Minimum="0.0010" Maximum="0.0200" TickFrequency="0.0005"
+                            IsSnapToTickEnabled="True" ValueChanged="SettingsSlider_ValueChanged"/>
+          <TextBlock x:Name="SpeechStartValueText" Width="46" Margin="4,0,12,0" VerticalAlignment="Center"/>
+
+          <TextBlock x:Name="SpeechEndLabel" Text="End thr:" VerticalAlignment="Center" Margin="0,0,4,0"/>
+          <Slider x:Name="SpeechEndThresholdSlider" Width="120" Minimum="0.0005" Maximum="0.0100" TickFrequency="0.0005"
+                            IsSnapToTickEnabled="True" ValueChanged="SettingsSlider_ValueChanged"/>
+          <TextBlock x:Name="SpeechEndValueText" Width="46" Margin="4,0,12,0" VerticalAlignment="Center"/>
+
+          <TextBlock x:Name="FontHintLabel" Text="Font Ctrl+Wheel:" VerticalAlignment="Center" Margin="0,0,4,0"/>
+          <TextBlock x:Name="FontSizeValueText" Width="24" VerticalAlignment="Center"/>
+          <TextBlock x:Name="RecordPathLabel" Text="| Save:" VerticalAlignment="Center" Margin="10,0,4,0"/>
+          <TextBlock x:Name="RecordPathText" Width="220" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+        </StackPanel>
+      </StatusBarItem>
+    </StatusBar>
+
+    <!-- Transcript + Translation -->
+    <Grid Margin="4">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="*"/>
+        <ColumnDefinition Width="Auto"/>
+        <ColumnDefinition Width="*"/>
+      </Grid.ColumnDefinitions>
+
+      <DockPanel Grid.Column="0">
+        <TextBlock x:Name="TranscriptHeader" DockPanel.Dock="Top" Text="Transcript (source)" FontWeight="SemiBold" Margin="0,0,0,4"/>
+        <TextBox x:Name="TranscriptBox" IsReadOnly="True" TextWrapping="Wrap"
                          VerticalScrollBarVisibility="Auto" AcceptsReturn="True"
-                         Background="#FAFAFA"/>
-            </DockPanel>
+                         Background="#FAFAFA" PreviewMouseWheel="OutputText_PreviewMouseWheel"/>
+      </DockPanel>
 
-            <GridSplitter Grid.Column="1" Width="6" HorizontalAlignment="Center"
+      <GridSplitter Grid.Column="1" Width="6" HorizontalAlignment="Center"
                           VerticalAlignment="Stretch" Background="LightGray"/>
 
-            <DockPanel Grid.Column="2">
-                <TextBlock DockPanel.Dock="Top" Text="Translation" FontWeight="SemiBold" Margin="0,0,0,4"/>
-                <TextBox x:Name="TranslationBox" IsReadOnly="True" TextWrapping="Wrap"
+      <DockPanel Grid.Column="2">
+        <TextBlock x:Name="TranslationHeader" DockPanel.Dock="Top" Text="Translation" FontWeight="SemiBold" Margin="0,0,0,4"/>
+        <TextBox x:Name="TranslationBox" IsReadOnly="True" TextWrapping="Wrap"
                          VerticalScrollBarVisibility="Auto" AcceptsReturn="True"
-                         Background="#FAFAFA"/>
-            </DockPanel>
-        </Grid>
-    </DockPanel>
+                         Background="#FAFAFA" PreviewMouseWheel="OutputText_PreviewMouseWheel"/>
+      </DockPanel>
+    </Grid>
+  </DockPanel>
 </Window>
