@@ -14,6 +14,7 @@ public class AppSettings
     public string DefaultTargetLanguage { get; set; } = "ru";
     public string DefaultTranslationLlm { get; set; } = "";
     public string WhisperModelType { get; set; } = "small";
+    public float WhisperTemperature { get; set; } = 0.0f;
     public Dictionary<string, string> SupportedLanguages { get; set; } = new()
     {
         { "ru", "Russian" },

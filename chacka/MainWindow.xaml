@@ -16,7 +16,7 @@
           <MenuItem x:Name="MenuMainToolbar" Header="Main Toolbar" IsCheckable="True" IsChecked="True" Checked="ToggleToolbar_Click" Unchecked="ToggleToolbar_Click" />
           <MenuItem x:Name="MenuAudioToolbar" Header="Audio Settings" IsCheckable="True" IsChecked="True" Checked="ToggleToolbar_Click" Unchecked="ToggleToolbar_Click" />
           <MenuItem x:Name="MenuLlmsToolbar" Header="LLM Toolbar" IsCheckable="True" IsChecked="True" Checked="ToggleToolbar_Click" Unchecked="ToggleToolbar_Click" />
-      </ContextMenu>
+        </ContextMenu>
       </ToolBarTray.ContextMenu>
 
       <ToolBar x:Name="MainToolbar" Band="0" BandIndex="0">
@@ -46,6 +46,9 @@
       <ToolBar x:Name="LLMToolbar" Band="2" BandIndex="2">
         <TextBlock x:Name="LlmLabel" Text="LLM:" VerticalAlignment="Center" Margin="4,0"/>
         <ComboBox x:Name="LlmCombo" Width="120" SelectionChanged="LlmCombo_SelectionChanged" />
+        <TextBlock x:Name="LlmTempLabel" Text=" Temp:" VerticalAlignment="Center" Margin="4,0"/>
+        <Slider x:Name="LlmTempSlider" Width="60" Minimum="0" Maximum="2.0" TickFrequency="0.1" IsSnapToTickEnabled="True" ValueChanged="LlmTempSlider_ValueChanged"/>
+        <TextBlock x:Name="LlmTempValueText" Width="26" VerticalAlignment="Center" Margin="4,0"/>
         <Separator/>
         <TextBlock x:Name="WhisperLabel" Text="Whisper:" VerticalAlignment="Center" Margin="4,0"/>
         <ComboBox x:Name="WhisperModelCombo" Width="80">
@@ -56,6 +59,9 @@
             <ComboBoxItem Content="large" />
         </ComboBox>
         <Button x:Name="ApplyWhisperModelBtn" Content="↻" ToolTip="Apply Model" Click="ApplyWhisperModelBtn_Click" Padding="6,2"/>
+        <TextBlock x:Name="WhisperTempLabel" Text=" Temp:" VerticalAlignment="Center" Margin="4,0"/>
+        <Slider x:Name="WhisperTempSlider" Width="60" Minimum="0" Maximum="1.0" TickFrequency="0.1" IsSnapToTickEnabled="True" ValueChanged="WhisperTempSlider_ValueChanged"/>
+        <TextBlock x:Name="WhisperTempValueText" Width="26" VerticalAlignment="Center" Margin="4,0"/>
       </ToolBar>
        <ToolBar x:Name="AudioToolbar" Band="1" BandIndex="0">
         <TextBlock x:Name="PauseDurationLabel" Text="Pause(s):" VerticalAlignment="Center" Margin="0,0,4,0" ToolTip="How many seconds of silence before processing audio chunk"/>
@@ -83,7 +89,10 @@
     <StatusBar DockPanel.Dock="Bottom">
       <StatusBarItem>
         <StackPanel Orientation="Horizontal">
-          <TextBlock x:Name="RecordPathLabel" Width="Auto" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+          <TextBlock x:Name="SessionTimerText" Text="0:00:00" VerticalAlignment="Center" Margin="4,0,8,0"/>
+          <TextBlock x:Name="ActiveRecordIndicator" Text="●" Margin="4,0" VerticalAlignment="Center" FontSize="16" Foreground="Gray"/>
+          <TextBlock x:Name="WhisperModeText" Text="[Whisper-recorder mode]" Foreground="#FF8C00" VerticalAlignment="Center" Margin="4,0" Visibility="Collapsed"/>
+          <TextBlock x:Name="RecordPathLabel" Width="Auto" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Margin="8,0,0,0"/>
         </StackPanel>
       </StatusBarItem>
     </StatusBar>
@@ -100,7 +109,15 @@
         <TextBlock x:Name="TranscriptHeader" DockPanel.Dock="Top" Text="Transcript (source)" FontWeight="SemiBold" Margin="0,0,0,4"/>
         <TextBox x:Name="TranscriptBox" IsReadOnly="True" TextWrapping="Wrap"
                          VerticalScrollBarVisibility="Auto" AcceptsReturn="True"
-                         Background="#FAFAFA" PreviewMouseWheel="OutputText_PreviewMouseWheel"/>
+                         Background="#FAFAFA" PreviewMouseWheel="OutputText_PreviewMouseWheel">
+          <TextBox.ContextMenu>
+            <ContextMenu>
+              <MenuItem Header="Copy" Command="ApplicationCommands.Copy"/>
+              <MenuItem x:Name="MenuTranscriptSave" Header="Save to File..." Click="MenuTranscriptSave_Click"/>
+              <MenuItem x:Name="MenuTranscriptClear" Header="Clear text" Click="MenuTranscriptClear_Click"/>
+            </ContextMenu>
+          </TextBox.ContextMenu>
+        </TextBox>
       </DockPanel>
 
       <GridSplitter Grid.Column="1" Width="6" HorizontalAlignment="Center"
@@ -110,7 +127,15 @@
         <TextBlock x:Name="TranslationHeader" DockPanel.Dock="Top" Text="Translation" FontWeight="SemiBold" Margin="0,0,0,4"/>
         <TextBox x:Name="TranslationBox" IsReadOnly="True" TextWrapping="Wrap"
                          VerticalScrollBarVisibility="Auto" AcceptsReturn="True"
-                         Background="#FAFAFA" PreviewMouseWheel="OutputText_PreviewMouseWheel"/>
+                         Background="#FAFAFA" PreviewMouseWheel="OutputText_PreviewMouseWheel">
+          <TextBox.ContextMenu>
+            <ContextMenu>
+              <MenuItem Header="Copy" Command="ApplicationCommands.Copy"/>
+              <MenuItem x:Name="MenuTranslationSave" Header="Save to File..." Click="MenuTranslationSave_Click"/>
+              <MenuItem x:Name="MenuTranslationClear" Header="Clear text" Click="MenuTranslationClear_Click"/>
+            </ContextMenu>
+          </TextBox.ContextMenu>
+        </TextBox>
       </DockPanel>
     </Grid>
   </DockPanel>

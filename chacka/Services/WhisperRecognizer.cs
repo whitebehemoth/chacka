@@ -40,7 +40,7 @@ public class WhisperRecognizer : IDisposable
 
     public bool IsLoaded => _factory != null;
 
-    public async Task<string> RecognizeAsync(float[] samples, string language = "en")
+    public async Task<string> RecognizeAsync(float[] samples, string language = "en", float temperature = 0.0f)
     {
         if (_factory == null) return string.Empty;
 
@@ -51,7 +51,7 @@ public class WhisperRecognizer : IDisposable
             await using var processor = _factory.CreateBuilder()
                 .WithLanguage(language)
                 .WithEntropyThreshold(2.4f) // Помогает бороться с зацикливанием пауз
-                .WithTemperature(0.1f)      // Детерминированный результат (ускоряет работу на чистом аудио)
+                .WithTemperature(temperature)      // Детерминированный результат (ускоряет работу на чистом аудио)
                 .WithThreads(Environment.ProcessorCount / 2) // Оставляем ресурсы приложению
                 .Build();
 
@@ -73,7 +73,7 @@ public class WhisperRecognizer : IDisposable
         }
     }
 
-    public async Task<string> RecognizeFromWaveFileAsync(string path, string language = "en")
+    public async Task<string> RecognizeFromWaveFileAsync(string path, string language = "en", float temperature = 0.0f)
     {
         if (string.IsNullOrWhiteSpace(path)) throw new ArgumentException("Path must be provided", nameof(path));
         if (!File.Exists(path)) throw new FileNotFoundException("Audio file not found", path);
@@ -86,7 +86,7 @@ public class WhisperRecognizer : IDisposable
             await using var processor = _factory.CreateBuilder()
                 .WithLanguage(language)
                 .WithEntropyThreshold(2.4f)
-                .WithTemperature(0.0f)
+                .WithTemperature(temperature)
                 .Build();
 
             await using var stream = File.OpenRead(path);

@@ -34,6 +34,8 @@ public partial class MainWindow : Window
     private bool _suppressUiEvents = true;
     private const double MinUiFontSize = 8;
     private const double MaxUiFontSize = 24;
+    private System.Windows.Threading.DispatcherTimer _sessionTimer = new();
+    private DateTime _sessionStartTime;
 
     public MainWindow()
     {
@@ -62,6 +64,13 @@ public partial class MainWindow : Window
         LoadDevices();
         WireEvents();
         InitializeSettingsUi();
+
+        _sessionTimer.Interval = TimeSpan.FromSeconds(1);
+        _sessionTimer.Tick += (s, e) => 
+        {
+            SessionTimerText.Text = (DateTime.Now - _sessionStartTime).ToString(@"h\:mm\:ss");
+        };
+
         _ = InitializeWhisperAsync();
     }
 
@@ -122,7 +131,30 @@ public partial class MainWindow : Window
     private void WireEvents()
     {
         _capture.AudioChunkReady += OnAudioChunkReady;
-        //_capture.RecordingSaved += path => Dispatcher.Invoke(() => UpdateRecordingPath(path));
+        // _capture.RecordingSaved += path => { /* UI already shows save path but we might not need to update it as part of request, skipping original logic here */ };
+        SourceLangCombo.SelectionChanged += LangCombo_SelectionChanged;
+        TargetLangCombo.SelectionChanged += LangCombo_SelectionChanged;
+    }
+
+    private void LangCombo_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+    {
+        if (_suppressUiEvents) return;
+        UpdateWhisperModeIndicator();
+    }
+
+    private void UpdateWhisperModeIndicator()
+    {
+        var sourceLang = (SourceLangCombo.SelectedItem as LanguageInfo)?.Code;
+        var targetLang = (TargetLangCombo.SelectedItem as LanguageInfo)?.Code;
+
+        if (sourceLang == targetLang && sourceLang != null)
+        {
+            WhisperModeText.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            WhisperModeText.Visibility = Visibility.Collapsed;
+        }
     }
 
     private async Task InitializeWhisperAsync()
@@ -158,11 +190,19 @@ public partial class MainWindow : Window
         RecordAudioCheckBox.IsChecked = _settings.RecordAudioEnabled;
         RecordAudioCheckBox.IsEnabled = !_capture.IsCapturing;
         UpdateRecordIndicator();
+        UpdateActiveRecordIndicator();
 
         PauseDurationSlider.Value = _settings.PauseDurationSeconds;
         MinChunkBeforePauseSlider.Value = _settings.MinChunkDurationBeforePauseFlushSeconds;
         SpeechStartThresholdSlider.Value = _settings.SpeechStartThreshold;
         SpeechEndThresholdSlider.Value = _settings.SpeechEndThreshold;
+        WhisperTempSlider.Value = _settings.WhisperTemperature;
+        
+        if (LlmCombo.SelectedItem != null && _settings.Translation.TryGetValue(LlmCombo.SelectedItem.ToString()!, out var llmOptions))
+        {
+            LlmTempSlider.Value = llmOptions.Temperature;
+        }
+
         if (_settings.OutputFontSize is < MinUiFontSize or > MaxUiFontSize)
             _settings.OutputFontSize = 13;
 
@@ -170,6 +210,7 @@ public partial class MainWindow : Window
         ApplyUiLanguage(_settings.UiLanguage);
         //UpdateRecordingPath(_capture.LastRecordingPath);
         UpdateSettingsLabels();
+        UpdateWhisperModeIndicator();
         _suppressUiEvents = false;
     }
 
@@ -234,6 +275,27 @@ public partial class MainWindow : Window
         MinChunkBeforePauseValueText.Text = MinChunkBeforePauseSlider.Value.ToString("F2");
         SpeechStartValueText.Text = SpeechStartThresholdSlider.Value.ToString("F4");
         SpeechEndValueText.Text = SpeechEndThresholdSlider.Value.ToString("F4");
+        LlmTempValueText.Text = LlmTempSlider.Value.ToString("F1");
+        WhisperTempValueText.Text = WhisperTempSlider.Value.ToString("F1");
+    }
+
+    private void LlmTempSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_suppressUiEvents) return;
+        if (LlmCombo.SelectedItem != null && _settings.Translation.TryGetValue(LlmCombo.SelectedItem.ToString()!, out var llmOptions))
+        {
+            llmOptions.Temperature = e.NewValue;
+            UpdateSettingsLabels();
+            SaveUserSettings();
+        }
+    }
+
+    private void WhisperTempSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_suppressUiEvents) return;
+        _settings.WhisperTemperature = (float)e.NewValue;
+        UpdateSettingsLabels();
+        SaveUserSettings();
     }
 
     private void UiLanguageCombo_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
@@ -261,27 +323,22 @@ public partial class MainWindow : Window
     private void UpdateRecordIndicator()
     {
         bool enabled = RecordAudioCheckBox.IsChecked == true;
+        
         RecordIndicator.Foreground = enabled ? Brushes.Red : Brushes.Gray;
         RecordIndicator.ToolTip = _settings.UiLanguage == "ru"
             ? (enabled ? "Запись включена" : "Запись выключена")
             : (enabled ? "Recording enabled" : "Recording disabled");
-        //RecordPathText.Text = RecordIndicator.ToolTip.ToString();
     }
 
-    //private void UpdateRecordingPath(string? path)
-    //{
-    //    if (string.IsNullOrWhiteSpace(path))
-    //    {
-    //        RecordPathText.Text = "-";
-    //        RecordPathText.ToolTip = _settings.UiLanguage == "ru"
-    //            ? "Запись ещё не сохранена"
-    //            : "No recording saved yet";
-    //        return;
-    //    }
+    private void UpdateActiveRecordIndicator()
+    {
+        bool isCapturing = _capture?.IsCapturing ?? false;
+        ActiveRecordIndicator.Foreground = isCapturing ? Brushes.Red : Brushes.Black;
+        ActiveRecordIndicator.ToolTip = _settings.UiLanguage == "ru"
+            ? (isCapturing ? "Запись идёт" : "Запись остановлена")
+            : (isCapturing ? "Recording in progress" : "Recording stopped");
 
-    //    RecordPathText.Text = Path.GetFileName(path);
-    //    RecordPathText.ToolTip = path;
-    //}
+    }
 
     private void ApplyUiLanguage(string lang)
     {
@@ -307,6 +364,7 @@ public partial class MainWindow : Window
             ? $"Открыть папку записей: {recordsDir}"
             : $"Open recordings folder: {recordsDir}";
         UpdateRecordIndicator();
+        UpdateActiveRecordIndicator();
 
         LlmLabel.Text = ru ? "Модель ИИ:" : "LLM:";
         WhisperLabel.Text = ru ? "Модель Whisper:" : "Whisper:";
@@ -395,6 +453,7 @@ public partial class MainWindow : Window
         appSettings["RecordAudioEnabled"] = _settings.RecordAudioEnabled;
         appSettings["UiLanguage"] = _settings.UiLanguage;
         appSettings["DefaultTranslationLlm"] = _settings.DefaultTranslationLlm;
+        appSettings["WhisperTemperature"] = _settings.WhisperTemperature;
         
 
         // Optionally, one could update the Translation block here, 
@@ -457,7 +516,7 @@ public partial class MainWindow : Window
                 string sourceFullName = Dispatcher.Invoke(() =>
                     (SourceLangCombo.SelectedItem as LanguageInfo)?.Name ?? "English");
 
-                string text = await _recognizer.RecognizeAsync(samples, sourceLang);
+                string text = await _recognizer.RecognizeAsync(samples, sourceLang, _settings.WhisperTemperature);
 
                 if (!string.IsNullOrWhiteSpace(text))
                 {
@@ -509,6 +568,12 @@ public partial class MainWindow : Window
         StartBtn.IsEnabled = false;
         StopBtn.IsEnabled = true;
         RecordAudioCheckBox.IsEnabled = false;
+        
+        _sessionStartTime = DateTime.Now;
+        SessionTimerText.Text = "0:00:00";
+        _sessionTimer.Start();
+
+        UpdateActiveRecordIndicator();
     }
 
     private void Stop_Click(object sender, RoutedEventArgs e)
@@ -518,6 +583,58 @@ public partial class MainWindow : Window
         StopBtn.IsEnabled = false;
         RecordAudioCheckBox.IsEnabled = true;
         //UpdateRecordingPath(_capture.LastRecordingPath);
+        
+        _sessionTimer.Stop();
+        UpdateActiveRecordIndicator();
+    }
+    private void MenuTranscriptClear_Click(object sender, RoutedEventArgs e)
+    {
+        TranscriptBox.Clear();
+    }
+    private void MenuTranslationClear_Click(object sender, RoutedEventArgs e)
+    {
+        TranslationBox.Clear();
+    }
+    private void MenuTranscriptSave_Click(object sender, RoutedEventArgs e)
+    {
+        SaveTextToFile(TranscriptBox.Text, (SourceLangCombo.SelectedItem as LanguageInfo)?.Code ?? "src");
+    }
+
+    private void MenuTranslationSave_Click(object sender, RoutedEventArgs e)
+    {
+        SaveTextToFile(TranslationBox.Text, (TargetLangCombo.SelectedItem as LanguageInfo)?.Code ?? "target");
+    }
+
+    private void SaveTextToFile(string text, string langSuffix)
+    {
+        string dir = AudioCaptureService.GetRecordsDirectory();
+        Directory.CreateDirectory(dir);
+        
+        string baseName = "meeting";
+        if (!string.IsNullOrEmpty(_capture.LastRecordingPath))
+        {
+            baseName = Path.GetFileNameWithoutExtension(_capture.LastRecordingPath);
+        }
+        else
+        {
+            baseName += $"-{DateTime.Now:yyyyMMdd-HHmmss}";
+        }
+
+        string defaultFileName = $"{baseName}_{langSuffix}.txt";
+
+        var saveDialog = new Microsoft.Win32.SaveFileDialog
+        {
+            InitialDirectory = dir,
+            FileName = defaultFileName,
+            DefaultExt = ".txt",
+            Filter = "Text documents (.txt)|*.txt"
+        };
+
+        if (saveDialog.ShowDialog() == true)
+        {
+            File.WriteAllText(saveDialog.FileName, text, System.Text.Encoding.Unicode);
+            MessageBox.Show($"File saved: {saveDialog.FileName}", "Saved", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
     }
 
     private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
