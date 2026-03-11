@@ -9,9 +9,9 @@ namespace chacka.Services;
 public class TranslationService
 {
     private readonly HttpClient _http = new();
-    private readonly TranslationOptions _options;
+    private TranslationOptions _options = new();
 
-    public TranslationService(TranslationOptions options)
+    public void UpdateOptions(TranslationOptions options)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
     }

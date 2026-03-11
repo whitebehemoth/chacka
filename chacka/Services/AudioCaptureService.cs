@@ -36,7 +36,7 @@ public class AudioCaptureService : IDisposable
 
     /// <summary>Fired on a background thread with 16 kHz mono float32 samples.</summary>
     public event Action<float[]>? AudioChunkReady;
-    public event Action<string>? RecordingSaved;
+    //public event Action<string>? RecordingSaved;
     public event Action<string>? StatusChanged;
 
     /// <summary>How many seconds of audio to buffer before flushing to STT.</summary>
@@ -344,7 +344,7 @@ public class AudioCaptureService : IDisposable
             MediaFoundationEncoder.EncodeToMp3(reader, mp3Path);
 
             _lastRecordingPath = mp3Path;
-            RecordingSaved?.Invoke(mp3Path);
+            //RecordingSaved?.Invoke(mp3Path);
 
             TryDeleteFileWithRetry(tempWavPath);
         }

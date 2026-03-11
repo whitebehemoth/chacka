@@ -12,6 +12,13 @@ public class AppSettings
     public string UiLanguage { get; set; } = "en";
     public string DefaultSourceLanguage { get; set; } = "fr";
     public string DefaultTargetLanguage { get; set; } = "ru";
-    public string WhisperModelType { get; set; } = "base";
-    public TranslationOptions Translation { get; set; } = new();
+    public string DefaultTranslationLlm { get; set; } = "";
+    public string WhisperModelType { get; set; } = "small";
+    public Dictionary<string, string> SupportedLanguages { get; set; } = new()
+    {
+        { "ru", "Russian" },
+        { "en", "English" },
+        { "fr", "French" }
+    };
+    public Dictionary<string, TranslationOptions> Translation { get; set; } = new();
 }

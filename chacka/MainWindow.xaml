@@ -5,12 +5,21 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:chacka"
         mc:Ignorable="d"
-        Title="Podcast Live Translator" Height="568" Width="1170"
+        Title="Podcast Live Translator" Height="568" Width="1204"
         Closing="Window_Closing">
   <DockPanel>
-    <!-- Toolbar -->
+    <!-- Toolbars -->
     <ToolBarTray DockPanel.Dock="Top">
-      <ToolBar Band="0" BandIndex="0">
+      
+      <ToolBarTray.ContextMenu>
+        <ContextMenu>
+          <MenuItem x:Name="MenuMainToolbar" Header="Main Toolbar" IsCheckable="True" IsChecked="True" Checked="ToggleToolbar_Click" Unchecked="ToggleToolbar_Click" />
+          <MenuItem x:Name="MenuAudioToolbar" Header="Audio Settings" IsCheckable="True" IsChecked="True" Checked="ToggleToolbar_Click" Unchecked="ToggleToolbar_Click" />
+          <MenuItem x:Name="MenuLlmsToolbar" Header="LLM Toolbar" IsCheckable="True" IsChecked="True" Checked="ToggleToolbar_Click" Unchecked="ToggleToolbar_Click" />
+      </ContextMenu>
+      </ToolBarTray.ContextMenu>
+
+      <ToolBar x:Name="MainToolbar" Band="0" BandIndex="0">
         <TextBlock x:Name="DeviceLabel" Text="Device:" VerticalAlignment="Center" Margin="4,0"/>
         <ComboBox x:Name="DevicesCombo" Width="300"
                           DisplayMemberPath="Name" SelectedValuePath="Id"/>
@@ -34,35 +43,47 @@
         <TextBlock x:Name="UiLangLabel" Text="UI:" VerticalAlignment="Center" Margin="4,0"/>
         <ComboBox x:Name="UiLanguageCombo" Width="49" SelectionChanged="UiLanguageCombo_SelectionChanged"/>
       </ToolBar>
+      <ToolBar x:Name="LLMToolbar" Band="2" BandIndex="2">
+        <TextBlock x:Name="LlmLabel" Text="LLM:" VerticalAlignment="Center" Margin="4,0"/>
+        <ComboBox x:Name="LlmCombo" Width="120" SelectionChanged="LlmCombo_SelectionChanged" />
+        <Separator/>
+        <TextBlock x:Name="WhisperLabel" Text="Whisper:" VerticalAlignment="Center" Margin="4,0"/>
+        <ComboBox x:Name="WhisperModelCombo" Width="80">
+            <ComboBoxItem Content="tiny" />
+            <ComboBoxItem Content="base" />
+            <ComboBoxItem Content="small" />
+            <ComboBoxItem Content="medium" />
+            <ComboBoxItem Content="large" />
+        </ComboBox>
+        <Button x:Name="ApplyWhisperModelBtn" Content="↻" ToolTip="Apply Model" Click="ApplyWhisperModelBtn_Click" Padding="6,2"/>
+      </ToolBar>
+       <ToolBar x:Name="AudioToolbar" Band="1" BandIndex="0">
+        <TextBlock x:Name="PauseDurationLabel" Text="Pause(s):" VerticalAlignment="Center" Margin="0,0,4,0" ToolTip="How many seconds of silence before processing audio chunk"/>
+        <Slider x:Name="PauseDurationSlider" Width="100" Minimum="0.10" Maximum="2.00" TickFrequency="0.05"
+                          IsSnapToTickEnabled="True" ValueChanged="SettingsSlider_ValueChanged"/>
+        <TextBlock x:Name="PauseDurationValueText" Width="38" Margin="4,0,4,0" VerticalAlignment="Center"/>
+
+        <TextBlock x:Name="MinChunkLabel" Text="Min chunk(s):" VerticalAlignment="Center" Margin="0,0,4,0" ToolTip="Minimum seconds to capture before allowing pause interruption"/>
+        <Slider x:Name="MinChunkBeforePauseSlider" Width="100" Minimum="0.50" Maximum="3.00" TickFrequency="0.10"
+                          IsSnapToTickEnabled="True" ValueChanged="SettingsSlider_ValueChanged"/>
+        <TextBlock x:Name="MinChunkBeforePauseValueText" Width="38" Margin="4,0,4,0" VerticalAlignment="Center"/>
+
+        <TextBlock x:Name="SpeechStartLabel" Text="Start thr:" VerticalAlignment="Center" Margin="0,0,4,0" ToolTip="Threshold RMS value to detect start of speech"/>
+        <Slider x:Name="SpeechStartThresholdSlider" Width="100" Minimum="0.0005" Maximum="0.1000" TickFrequency="0.0005"
+                          IsSnapToTickEnabled="True" ValueChanged="SettingsSlider_ValueChanged"/>
+        <TextBlock x:Name="SpeechStartValueText" Width="55" Margin="4,0,4,0" VerticalAlignment="Center"/>
+
+        <TextBlock x:Name="SpeechEndLabel" Text="End thr:" VerticalAlignment="Center" Margin="0,0,4,0" ToolTip="Threshold RMS value to mark the end of speech"/>
+        <Slider x:Name="SpeechEndThresholdSlider" Width="100" Minimum="0.0001" Maximum="0.1000" TickFrequency="0.0005"
+                          IsSnapToTickEnabled="True" ValueChanged="SettingsSlider_ValueChanged"/>
+        <TextBlock x:Name="SpeechEndValueText" Width="55" Margin="4,0,4,0" VerticalAlignment="Center"/>
+      </ToolBar>
     </ToolBarTray>
 
     <StatusBar DockPanel.Dock="Bottom">
       <StatusBarItem>
         <StackPanel Orientation="Horizontal">
-          <TextBlock x:Name="PauseDurationLabel" Text="Pause(s):" VerticalAlignment="Center" Margin="0,0,4,0"/>
-          <Slider x:Name="PauseDurationSlider" Width="120" Minimum="0.30" Maximum="2.00" TickFrequency="0.05"
-                            IsSnapToTickEnabled="True" ValueChanged="SettingsSlider_ValueChanged"/>
-          <TextBlock x:Name="PauseDurationValueText" Width="38" Margin="4,0,12,0" VerticalAlignment="Center"/>
-
-          <TextBlock x:Name="MinChunkLabel" Text="Min chunk(s):" VerticalAlignment="Center" Margin="0,0,4,0"/>
-          <Slider x:Name="MinChunkBeforePauseSlider" Width="120" Minimum="0.50" Maximum="3.00" TickFrequency="0.10"
-                            IsSnapToTickEnabled="True" ValueChanged="SettingsSlider_ValueChanged"/>
-          <TextBlock x:Name="MinChunkBeforePauseValueText" Width="38" Margin="4,0,12,0" VerticalAlignment="Center"/>
-
-          <TextBlock x:Name="SpeechStartLabel" Text="Start thr:" VerticalAlignment="Center" Margin="0,0,4,0"/>
-          <Slider x:Name="SpeechStartThresholdSlider" Width="120" Minimum="0.0010" Maximum="0.0200" TickFrequency="0.0005"
-                            IsSnapToTickEnabled="True" ValueChanged="SettingsSlider_ValueChanged"/>
-          <TextBlock x:Name="SpeechStartValueText" Width="46" Margin="4,0,12,0" VerticalAlignment="Center"/>
-
-          <TextBlock x:Name="SpeechEndLabel" Text="End thr:" VerticalAlignment="Center" Margin="0,0,4,0"/>
-          <Slider x:Name="SpeechEndThresholdSlider" Width="120" Minimum="0.0005" Maximum="0.0100" TickFrequency="0.0005"
-                            IsSnapToTickEnabled="True" ValueChanged="SettingsSlider_ValueChanged"/>
-          <TextBlock x:Name="SpeechEndValueText" Width="46" Margin="4,0,12,0" VerticalAlignment="Center"/>
-
-          <TextBlock x:Name="FontHintLabel" Text="Font Ctrl+Wheel:" VerticalAlignment="Center" Margin="0,0,4,0"/>
-          <TextBlock x:Name="FontSizeValueText" Width="24" VerticalAlignment="Center"/>
-          <TextBlock x:Name="RecordPathLabel" Text="| Save:" VerticalAlignment="Center" Margin="10,0,4,0"/>
-          <TextBlock x:Name="RecordPathText" Width="220" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+          <TextBlock x:Name="RecordPathLabel" Width="Auto" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
         </StackPanel>
       </StatusBarItem>
     </StatusBar>
