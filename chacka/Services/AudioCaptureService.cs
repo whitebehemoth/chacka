@@ -21,7 +21,6 @@ public class AudioCaptureService : IDisposable
     private readonly object _lock = new();
     private MemoryStream _buffer = new();
     private WaveFormat? _captureFormat;
-    private System.Threading.Timer? _chunkTimer;
     private float _lastPeak;
     private float _lastRms;
     private bool _isCapturing;
@@ -41,7 +40,7 @@ public class AudioCaptureService : IDisposable
     public event Action<string>? StatusChanged;
 
     /// <summary>How many seconds of audio to buffer before flushing to STT.</summary>
-    public double ChunkDurationSeconds { get; set; } = 10.0;
+    public double MaxChunkDurationSeconds { get; set; } = 10.0;
 
     /// <summary>How many seconds of silence must pass before flushing mid-chunk.</summary>
     public double PauseDurationSeconds { get; set; } = 0.8;
@@ -121,13 +120,8 @@ public class AudioCaptureService : IDisposable
 
         lock (_lock) { _buffer = new MemoryStream(); }
 
-        _chunkTimer = new System.Threading.Timer(
-            OnChunkTimer, null,
-            TimeSpan.FromSeconds(ChunkDurationSeconds),
-            TimeSpan.FromSeconds(ChunkDurationSeconds));
-
         _lastSoundTime = DateTime.UtcNow;
-        _silenceFlushPending = false;
+
         _inSpeech = false;
 
         _capture.StartRecording();
@@ -137,9 +131,6 @@ public class AudioCaptureService : IDisposable
 
     public void Stop()
     {
-        _chunkTimer?.Dispose();
-        _chunkTimer = null;
-
         if (_capture != null)
         {
             _capture.StopRecording();
@@ -166,7 +157,7 @@ public class AudioCaptureService : IDisposable
             bufferedSeconds = GetBufferedSecondsNoLock();
         }
 
-        // Update peak
+        // Высчитываем пики и RMS текущего фрейма
         float peak = 0f;
         for (int i = 0; i + 4 <= e.BytesRecorded; i += 4)
         {
@@ -176,31 +167,40 @@ public class AudioCaptureService : IDisposable
         _lastPeak = peak;
         _lastRms = ComputeRms(e.Buffer, e.BytesRecorded);
 
-        if (PauseDurationSeconds > 0)
-        {
-            var now = DateTime.UtcNow;
-            bool speechDetected = _inSpeech
-                ? _lastRms >= SpeechEndThreshold
-                : _lastRms >= SpeechStartThreshold;
+        // Логика VAD (определение пауз) и Максимальной длины
+        var now = DateTime.UtcNow;
+        bool speechDetected = _inSpeech ? _lastRms >= SpeechEndThreshold : _lastRms >= SpeechStartThreshold;
 
-            if (speechDetected)
+        // Считаем ChunkDurationSeconds не жестким таймером, а "максимальной длиной до принудительного сброса", 
+        // чтобы текст спикера, который говорит без пауз 15-20 секунд, все равно выводился на экран.
+        bool forceMaxDurationFlush = bufferedSeconds >= MaxChunkDurationSeconds;
+
+        if (speechDetected)
+        {
+            _inSpeech = true;
+            _lastSoundTime = now;
+        }
+        else
+        {
+            // Проверяем, достаточно ли длилась пауза
+            bool pauseExceeded = (now - _lastSoundTime).TotalSeconds >= PauseDurationSeconds;
+
+            if (_inSpeech && pauseExceeded && bufferedSeconds >= MinChunkDurationBeforePauseFlushSeconds)
             {
-                _inSpeech = true;
-                _lastSoundTime = now;
-                _silenceFlushPending = false;
-            }
-            else if (!_silenceFlushPending
-                     && (now - _lastSoundTime).TotalSeconds >= PauseDurationSeconds
-                     && bufferedSeconds >= MinChunkDurationBeforePauseFlushSeconds)
-            {
+                // Сработал сброс по натуральной паузе
                 _inSpeech = false;
-                _silenceFlushPending = true;
                 FlushBuffer();
+                return; // Выходим, буфер сброшен
             }
-            else
-            {
-                _inSpeech = false;
-            }
+        }
+
+        // Если человек говорит без остановок дольше максимума, режем принудительно, 
+        // или если копилась тишина дольше ChunkDurationSeconds времени
+        if (forceMaxDurationFlush)
+        {
+            _inSpeech = false;
+            _lastSoundTime = now;
+            FlushBuffer();
         }
     }
 
@@ -209,8 +209,6 @@ public class AudioCaptureService : IDisposable
         if (e.Exception != null)
             StatusChanged?.Invoke($"Capture error: {e.Exception.Message}");
     }
-
-    private void OnChunkTimer(object? state) => FlushBuffer();
 
     private void FlushBuffer()
     {
@@ -256,13 +254,19 @@ public class AudioCaptureService : IDisposable
 
         var resampled = new WdlResamplingSampleProvider(mono, 16000);
 
-        var result = new List<float>();
+        // Предполагаемый размер 16кгц буфера (с небольшим запасом)
+        // Формула: (длина_байт / байт_в_секунду) * 16000
+        int estimatedSamples = (int)((rawData.Length / (double)sourceFormat.AverageBytesPerSecond) * 16000) + 1000;
+        
+        var result = new List<float>(estimatedSamples); // Избавляемся от тысяч аллокаций памяти (memory leaks)
         var readBuffer = new float[16000];
         int read;
+        
         while ((read = resampled.Read(readBuffer, 0, readBuffer.Length)) > 0)
         {
-            for (int i = 0; i < read; i++)
-                result.Add(readBuffer[i]);
+            // Специальный оптимизированный метод с .NET 8 / C# 12+ (если используете)
+            // Иначе можно использовать AddRange или просто оставить как есть, List capacity не даст утечек
+            result.AddRange(new ReadOnlySpan<float>(readBuffer, 0, read));
         }
 
         return result.ToArray();

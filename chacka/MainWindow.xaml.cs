@@ -42,7 +42,7 @@ public partial class MainWindow : Window
         AudioCaptureService.CleanupStaleTempFiles();
 
         _settings = App.Configuration.GetSection("AppSettings").Get<AppSettings>() ?? new AppSettings();
-        _capture.ChunkDurationSeconds = _settings.ChunkDurationSeconds;
+        _capture.MaxChunkDurationSeconds = _settings.MaxChunkDurationSeconds;
         _capture.PauseDurationSeconds = _settings.PauseDurationSeconds;
         _capture.MinChunkDurationBeforePauseFlushSeconds = _settings.MinChunkDurationBeforePauseFlushSeconds;
         _capture.SpeechStartThreshold = _settings.SpeechStartThreshold;
@@ -100,7 +100,7 @@ public partial class MainWindow : Window
             var modelTypeString = _settings.WhisperModelType ?? "base";
             var modelType = Enum.TryParse<GgmlType>(modelTypeString, true, out var parsed)
                 ? parsed
-                : GgmlType.Base;
+                : GgmlType.Medium;
 
             await _recognizer.InitializeAsync(modelDir, modelType);
         }
@@ -346,7 +346,7 @@ public partial class MainWindow : Window
 
         JsonObject appSettings = root["AppSettings"] as JsonObject ?? new JsonObject();
 
-        appSettings["ChunkDurationSeconds"] = _settings.ChunkDurationSeconds;
+        appSettings["ChunkDurationSeconds"] = _settings.MaxChunkDurationSeconds;
         appSettings["PauseDurationSeconds"] = _settings.PauseDurationSeconds;
         appSettings["MinChunkDurationBeforePauseFlushSeconds"] = _settings.MinChunkDurationBeforePauseFlushSeconds;
         appSettings["SpeechStartThreshold"] = _settings.SpeechStartThreshold;
