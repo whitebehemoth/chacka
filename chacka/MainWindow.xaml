@@ -83,6 +83,10 @@
         <Slider x:Name="SpeechEndThresholdSlider" Width="100" Minimum="0.0001" Maximum="0.1000" TickFrequency="0.0005"
                           IsSnapToTickEnabled="True" ValueChanged="SettingsSlider_ValueChanged"/>
         <TextBlock x:Name="SpeechEndValueText" Width="55" Margin="4,0,4,0" VerticalAlignment="Center"/>
+        <TextBlock x:Name="SilenceThresholdLabel" Text="Silence thr:" VerticalAlignment="Center" Margin="0,0,4,0" ToolTip="Silence Threshold to mark the silance"/>
+        <Slider x:Name="SilenceThresholdSlider" Width="100" Minimum="0.001" Maximum="0.009" TickFrequency="0.001"
+            IsSnapToTickEnabled="True" ValueChanged="SettingsSlider_ValueChanged"/>
+        <TextBlock x:Name="SilenceThresholdText" Width="55" Margin="4,0,4,0" VerticalAlignment="Center"/>
       </ToolBar>
     </ToolBarTray>
 
@@ -112,7 +116,7 @@
                          Background="#FAFAFA" PreviewMouseWheel="OutputText_PreviewMouseWheel">
           <TextBox.ContextMenu>
             <ContextMenu>
-              <MenuItem Header="Copy" Command="ApplicationCommands.Copy"/>
+              <MenuItem x:Name="MenuTranscriptCopy" Header="Copy" Command="ApplicationCommands.Copy"/>
               <MenuItem x:Name="MenuTranscriptSave" Header="Save to File..." Click="MenuTranscriptSave_Click"/>
               <MenuItem x:Name="MenuTranscriptClear" Header="Clear text" Click="MenuTranscriptClear_Click"/>
             </ContextMenu>
@@ -130,7 +134,7 @@
                          Background="#FAFAFA" PreviewMouseWheel="OutputText_PreviewMouseWheel">
           <TextBox.ContextMenu>
             <ContextMenu>
-              <MenuItem Header="Copy" Command="ApplicationCommands.Copy"/>
+              <MenuItem x:Name="MenuTranslationCopy" Header="Copy" Command="ApplicationCommands.Copy"/>
               <MenuItem x:Name="MenuTranslationSave" Header="Save to File..." Click="MenuTranslationSave_Click"/>
               <MenuItem x:Name="MenuTranslationClear" Header="Clear text" Click="MenuTranslationClear_Click"/>
             </ContextMenu>

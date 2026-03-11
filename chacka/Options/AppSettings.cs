@@ -15,6 +15,12 @@ public class AppSettings
     public string DefaultTranslationLlm { get; set; } = "";
     public string WhisperModelType { get; set; } = "small";
     public float WhisperTemperature { get; set; } = 0.0f;
+    public float SilenceThreshold { get; set; } = 0.002f;
+    public string RecordingsDirectory { get; set; } = "";    
+    public bool MainToolbarVisible { get; set; } = true;
+    public bool AudioToolbarVisible { get; set; } = true;
+    public bool LlmToolbarVisible { get; set; } = true;
+
     public Dictionary<string, string> SupportedLanguages { get; set; } = new()
     {
         { "ru", "Russian" },

@@ -49,7 +49,9 @@ public partial class MainWindow : Window
         _capture.MinChunkDurationBeforePauseFlushSeconds = _settings.MinChunkDurationBeforePauseFlushSeconds;
         _capture.SpeechStartThreshold = _settings.SpeechStartThreshold;
         _capture.SpeechEndThreshold = _settings.SpeechEndThreshold;
+        _capture.SilenceThreshold = _settings.SilenceThreshold;
         _capture.SessionRecordingEnabled = _settings.RecordAudioEnabled;
+        AudioCaptureService.RecordingsDirectory = _settings.RecordingsDirectory;
 
         _languages = new[]
         {
@@ -196,6 +198,8 @@ public partial class MainWindow : Window
         MinChunkBeforePauseSlider.Value = _settings.MinChunkDurationBeforePauseFlushSeconds;
         SpeechStartThresholdSlider.Value = _settings.SpeechStartThreshold;
         SpeechEndThresholdSlider.Value = _settings.SpeechEndThreshold;
+        SilenceThresholdSlider.Value = _settings.SilenceThreshold;
+
         WhisperTempSlider.Value = _settings.WhisperTemperature;
         
         if (LlmCombo.SelectedItem != null && _settings.Translation.TryGetValue(LlmCombo.SelectedItem.ToString()!, out var llmOptions))
@@ -205,6 +209,12 @@ public partial class MainWindow : Window
 
         if (_settings.OutputFontSize is < MinUiFontSize or > MaxUiFontSize)
             _settings.OutputFontSize = 13;
+
+        MenuMainToolbar.IsChecked = _settings.MainToolbarVisible;
+        MenuAudioToolbar.IsChecked = _settings.AudioToolbarVisible;
+        MenuLlmsToolbar.IsChecked = _settings.LlmToolbarVisible;
+
+        ApplyToolbarVisibility();
 
         ApplyOutputFontSize(_settings.OutputFontSize);
         ApplyUiLanguage(_settings.UiLanguage);
@@ -216,10 +226,6 @@ public partial class MainWindow : Window
 
     private void SettingsSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
     {
-        if (SpeechStartThresholdSlider is null || SpeechEndThresholdSlider is null ||
-            PauseDurationSlider is null || MinChunkBeforePauseSlider is null)
-            return;
-
         if (_suppressUiEvents)
             return;
 
@@ -236,11 +242,13 @@ public partial class MainWindow : Window
         _settings.MinChunkDurationBeforePauseFlushSeconds = MinChunkBeforePauseSlider.Value;
         _settings.SpeechStartThreshold = (float)SpeechStartThresholdSlider.Value;
         _settings.SpeechEndThreshold = (float)SpeechEndThresholdSlider.Value;
+        _settings.SilenceThreshold = (float)SilenceThresholdSlider.Value;
 
         _capture.PauseDurationSeconds = _settings.PauseDurationSeconds;
         _capture.MinChunkDurationBeforePauseFlushSeconds = _settings.MinChunkDurationBeforePauseFlushSeconds;
         _capture.SpeechStartThreshold = _settings.SpeechStartThreshold;
         _capture.SpeechEndThreshold = _settings.SpeechEndThreshold;
+        _capture.SilenceThreshold = _settings.SilenceThreshold;
 
         UpdateSettingsLabels();
         SaveUserSettings();
@@ -275,6 +283,7 @@ public partial class MainWindow : Window
         MinChunkBeforePauseValueText.Text = MinChunkBeforePauseSlider.Value.ToString("F2");
         SpeechStartValueText.Text = SpeechStartThresholdSlider.Value.ToString("F4");
         SpeechEndValueText.Text = SpeechEndThresholdSlider.Value.ToString("F4");
+        SilenceThresholdText.Text = SilenceThresholdSlider.Value.ToString("F4");
         LlmTempValueText.Text = LlmTempSlider.Value.ToString("F1");
         WhisperTempValueText.Text = WhisperTempSlider.Value.ToString("F1");
     }
@@ -367,8 +376,15 @@ public partial class MainWindow : Window
         UpdateActiveRecordIndicator();
 
         LlmLabel.Text = ru ? "Модель ИИ:" : "LLM:";
+        LlmCombo.ToolTip = ru ? "Профиль LLM для перевода" : "LLM profile for translation";
+        LlmTempLabel.Text = ru ? " Темп:" : " Temp:";
+        LlmTempSlider.ToolTip = ru ? "Температура генерации LLM. Выше - больше креативности." : "LLM generation temperature. Higher = more creative.";
+        
         WhisperLabel.Text = ru ? "Модель Whisper:" : "Whisper:";
+        WhisperModelCombo.ToolTip = ru ? "Размер модели распознавания речи" : "Whisper model size for speech recognition";
         ApplyWhisperModelBtn.ToolTip = ru ? "Применить модель Whisper" : "Apply Whisper Model";
+        WhisperTempLabel.Text = ru ? " Темп:" : " Temp:";
+        WhisperTempSlider.ToolTip = ru ? "Температура Whisper. 0 для детерминированного результата." : "Whisper temperature. 0 for deterministic output.";
 
         FromLabel.Text = ru ? "Из:" : "From:";
         ToLabel.Text = ru ? "В:" : "To:";
@@ -397,6 +413,10 @@ public partial class MainWindow : Window
             ? "Speech end threshold - Порог конца речи. Понизьте, если в шуме плохо определяется конец фразы."
             : "Speech end threshold - End-of-speech sensitivity. Lower when too noisy to capture end of phrase.";
 
+        SilenceThresholdSlider.ToolTip = ru
+           ? "Silence threshold - Амплитуда, ниже которой, считаем, что звука нет."
+           : "Silence threshold - Amplitude below which audio is considered silence.";
+
         TranscriptHeader.Text = ru ? "Оригинал" : "Transcript (source)";
         TranslationHeader.Text = ru ? "Перевод" : "Translation";
 
@@ -404,6 +424,18 @@ public partial class MainWindow : Window
             ? "Ctrl + колесо: изменить размер шрифта"
             : "Ctrl + mouse wheel: change font size";
         TranslationBox.ToolTip = TranscriptBox.ToolTip;
+        
+        MenuMainToolbar.Header = ru ? "Основная панель" : "Main Toolbar";
+        MenuAudioToolbar.Header = ru ? "Панель аудио-настроек" : "Audio Settings";
+        MenuLlmsToolbar.Header = ru ? "Панель нейросетей" : "LLM Toolbar";
+
+        MenuTranscriptCopy.Header = ru ? "Копировать" : "Copy";
+        MenuTranscriptSave.Header = ru ? "Сохранить в файл..." : "Save to File...";
+        MenuTranscriptClear.Header = ru ? "Очистить текст" : "Clear text";
+
+        MenuTranslationCopy.Header = ru ? "Копировать" : "Copy";
+        MenuTranslationSave.Header = ru ? "Сохранить в файл..." : "Save to File...";
+        MenuTranslationClear.Header = ru ? "Очистить текст" : "Clear text";
 
         RecordPathLabel.Text = ru ? $"Папка записей: {recordsDir}" : $"Recordings folder: {recordsDir}";
 
@@ -454,7 +486,10 @@ public partial class MainWindow : Window
         appSettings["UiLanguage"] = _settings.UiLanguage;
         appSettings["DefaultTranslationLlm"] = _settings.DefaultTranslationLlm;
         appSettings["WhisperTemperature"] = _settings.WhisperTemperature;
-        
+        appSettings["MainToolbarVisible"] = _settings.MainToolbarVisible;
+        appSettings["AudioToolbarVisible"] = _settings.AudioToolbarVisible;
+        appSettings["LlmToolbarVisible"] = _settings.LlmToolbarVisible;
+        appSettings["SilenceThreshold"] = _settings.SilenceThreshold;
 
         // Optionally, one could update the Translation block here, 
         // but for now, we just ensure we don't accidentally overwrite the complex structure.
@@ -487,9 +522,21 @@ public partial class MainWindow : Window
 
     private void ToggleToolbar_Click(object sender, RoutedEventArgs e)
     {
-        MainToolbar?.Visibility = MenuMainToolbar.IsChecked ? Visibility.Visible : Visibility.Collapsed;
-        AudioToolbar?.Visibility = MenuAudioToolbar.IsChecked ? Visibility.Visible : Visibility.Collapsed;
-        LLMToolbar?.Visibility = MenuLlmsToolbar.IsChecked ? Visibility.Visible : Visibility.Collapsed;
+        if (_suppressUiEvents) return;
+        
+        _settings.MainToolbarVisible = MenuMainToolbar.IsChecked;
+        _settings.AudioToolbarVisible = MenuAudioToolbar.IsChecked;
+        _settings.LlmToolbarVisible = MenuLlmsToolbar.IsChecked;
+
+        ApplyToolbarVisibility();
+        SaveUserSettings();
+    }
+
+    private void ApplyToolbarVisibility()
+    {
+        if (MainToolbar != null) MainToolbar.Visibility = _settings.MainToolbarVisible ? Visibility.Visible : Visibility.Collapsed;
+        if (AudioToolbar != null) AudioToolbar.Visibility = _settings.AudioToolbarVisible ? Visibility.Visible : Visibility.Collapsed;
+        if (LLMToolbar != null) LLMToolbar.Visibility = _settings.LlmToolbarVisible ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void OnAudioChunkReady(float[] samples)
@@ -559,6 +606,25 @@ public partial class MainWindow : Window
 
     private void Start_Click(object sender, RoutedEventArgs e)
     {
+        var sourceLang = (SourceLangCombo.SelectedItem as LanguageInfo)?.Code;
+        var targetLang = (TargetLangCombo.SelectedItem as LanguageInfo)?.Code;
+
+        if (sourceLang != targetLang)
+        {
+            if (LlmCombo.SelectedItem != null && _settings.Translation.TryGetValue(LlmCombo.SelectedItem.ToString()!, out var options))
+            {
+                if (string.IsNullOrWhiteSpace(options.ApiUrl) || options.ApiUrl.Contains("[Full OpenAi URL]"))
+                {
+                    string msg = _settings.UiLanguage == "ru"
+                        ? $"Выбранный профиль LLM ({LlmCombo.SelectedItem}) не настроен.\nПожалуйста, заполните конфигурацию в файile:\n{App.AppSettingsPath}\n\nИли выберите одинаковые языки (Source -> Target) для работы в режиме [Whisper only]."
+                        : $"Selected LLM profile ({LlmCombo.SelectedItem}) is not configured.\nPlease fill out the configuration in file:\n{App.AppSettingsPath}\n\nOr select identical languages (Source -> Target) to work in [Whisper only] mode.";
+
+                    MessageBox.Show(this, msg, "Configuration Required", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+            }
+        }
+
         if (DevicesCombo.SelectedItem is AudioDeviceInfo device)
             _capture.SwitchDevice(device.Id);
 

@@ -36,7 +36,6 @@ public class AudioCaptureService : IDisposable
 
     /// <summary>Fired on a background thread with 16 kHz mono float32 samples.</summary>
     public event Action<float[]>? AudioChunkReady;
-    //public event Action<string>? RecordingSaved;
     public event Action<string>? StatusChanged;
 
     /// <summary>How many seconds of audio to buffer before flushing to STT.</summary>
@@ -59,7 +58,7 @@ public class AudioCaptureService : IDisposable
 
     /// <summary>Record full captured session into a single MP3 file between Start/Stop.</summary>
     public bool SessionRecordingEnabled { get; set; }
-
+    public static string RecordingsDirectory { get; set; } = "";
     public string? LastRecordingPath => _lastRecordingPath;
     public bool IsCapturing => _isCapturing;
 
@@ -70,9 +69,9 @@ public class AudioCaptureService : IDisposable
 
     public static string GetRecordsDirectory()
     {
-        return Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
-            "Chacka meeting recordings");
+        return !string.IsNullOrWhiteSpace(RecordingsDirectory)
+            ? RecordingsDirectory
+            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "Chacka meeting recordings");
     }
 
     public static void CleanupStaleTempFiles()
@@ -344,7 +343,6 @@ public class AudioCaptureService : IDisposable
             MediaFoundationEncoder.EncodeToMp3(reader, mp3Path);
 
             _lastRecordingPath = mp3Path;
-            //RecordingSaved?.Invoke(mp3Path);
 
             TryDeleteFileWithRetry(tempWavPath);
         }
