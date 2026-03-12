@@ -341,7 +341,7 @@ public partial class MainWindow : Window
 
     private void UpdateActiveRecordIndicator()
     {
-        bool isCapturing = _capture?.IsCapturing ?? false;
+        bool isCapturing = (_capture?.IsCapturing ?? false) && (RecordAudioCheckBox.IsChecked == true);
         ActiveRecordIndicator.Foreground = isCapturing ? Brushes.Red : Brushes.Black;
         ActiveRecordIndicator.ToolTip = _settings.UiLanguage == "ru"
             ? (isCapturing ? "Запись идёт" : "Запись остановлена")
@@ -413,6 +413,7 @@ public partial class MainWindow : Window
             ? "Speech end threshold - Порог конца речи. Понизьте, если в шуме плохо определяется конец фразы."
             : "Speech end threshold - End-of-speech sensitivity. Lower when too noisy to capture end of phrase.";
 
+        SilenceThresholdLabel.Text = ru ? "Порог тишины:" : "Silence thr:";
         SilenceThresholdSlider.ToolTip = ru
            ? "Silence threshold - Амплитуда, ниже которой, считаем, что звука нет."
            : "Silence threshold - Amplitude below which audio is considered silence.";

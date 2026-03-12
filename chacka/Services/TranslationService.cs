@@ -57,7 +57,7 @@ public class TranslationService
             if (!response.IsSuccessStatusCode)
             {
                 StatusChanged?.Invoke($"Translation error: {response.StatusCode}");
-                return $"[Translation error: {response.StatusCode}]";
+                return $"[Translation error: {responseBody}]";
             }
 
             using var document = JsonDocument.Parse(responseBody);

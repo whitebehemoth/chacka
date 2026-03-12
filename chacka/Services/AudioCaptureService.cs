@@ -1,7 +1,5 @@
 using System.IO;
-using System.Threading;
 using NAudio.CoreAudioApi;
-using NAudio.MediaFoundation;
 using NAudio.Wave;
 using NAudio.Wave.SampleProviders;
 
