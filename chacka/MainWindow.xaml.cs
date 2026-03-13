@@ -51,6 +51,10 @@ public partial class MainWindow : Window
         _capture.SpeechEndThreshold = _settings.SpeechEndThreshold;
         _capture.SilenceThreshold = _settings.SilenceThreshold;
         _capture.SessionRecordingEnabled = _settings.RecordAudioEnabled;
+        _capture.VoiceCaptured += capture_StatusChanged;
+        _capture.StatusChanged += app_StatusChanged;
+        _recognizer.StatusChanged += app_StatusChanged;
+        _translator.StatusChanged += app_StatusChanged;
         AudioCaptureService.RecordingsDirectory = _settings.RecordingsDirectory;
 
         _languages = new[]
@@ -74,6 +78,17 @@ public partial class MainWindow : Window
         };
 
         _ = InitializeWhisperAsync();
+    }
+
+    private void app_StatusChanged(string obj)
+    {
+        Dispatcher.Invoke(() => 
+            StatusLabel.Text = obj);
+    }
+    private void capture_StatusChanged(string obj)
+    {
+        Dispatcher.Invoke(() =>
+            CapturedStatusLabel.Text = obj);
     }
 
     private void InitializeLanguages()
@@ -163,9 +178,7 @@ public partial class MainWindow : Window
     {
         try
         {
-            var modelDir = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "chacka", "models");
+            var modelDir = Path.Combine("models");
             var modelTypeString = _settings.WhisperModelType ?? "base";
             var modelType = Enum.TryParse<GgmlType>(modelTypeString, true, out var parsed)
                 ? parsed
@@ -230,13 +243,13 @@ public partial class MainWindow : Window
             return;
 
         _suppressUiEvents = true;
-        if (SpeechEndThresholdSlider.Value >= SpeechStartThresholdSlider.Value)
-        {
-            if (ReferenceEquals(sender, SpeechEndThresholdSlider))
-                SpeechEndThresholdSlider.Value = Math.Max(SpeechEndThresholdSlider.Minimum, SpeechStartThresholdSlider.Value - 0.0005);
-            else
-                SpeechStartThresholdSlider.Value = Math.Min(SpeechStartThresholdSlider.Maximum, SpeechEndThresholdSlider.Value + 0.0005);
-        }
+        //if (SpeechEndThresholdSlider.Value >= SpeechStartThresholdSlider.Value)
+        //{
+        //    if (ReferenceEquals(sender, SpeechEndThresholdSlider))
+        //        SpeechEndThresholdSlider.Value = Math.Max(SpeechEndThresholdSlider.Minimum, SpeechStartThresholdSlider.Value - 0.0005);
+        //    else
+        //        SpeechStartThresholdSlider.Value = Math.Min(SpeechStartThresholdSlider.Maximum, SpeechEndThresholdSlider.Value + 0.0005);
+        //}
 
         _settings.PauseDurationSeconds = PauseDurationSlider.Value;
         _settings.MinChunkDurationBeforePauseFlushSeconds = MinChunkBeforePauseSlider.Value;
@@ -437,8 +450,6 @@ public partial class MainWindow : Window
         MenuTranslationCopy.Header = ru ? "Копировать" : "Copy";
         MenuTranslationSave.Header = ru ? "Сохранить в файл..." : "Save to File...";
         MenuTranslationClear.Header = ru ? "Очистить текст" : "Clear text";
-
-        RecordPathLabel.Text = ru ? $"Папка записей: {recordsDir}" : $"Recordings folder: {recordsDir}";
 
         //UpdateRecordingPath(_capture.LastRecordingPath);
     }

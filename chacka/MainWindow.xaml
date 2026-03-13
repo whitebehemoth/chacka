@@ -65,7 +65,7 @@
       </ToolBar>
        <ToolBar x:Name="AudioToolbar" Band="1" BandIndex="0">
         <TextBlock x:Name="PauseDurationLabel" Text="Pause(s):" VerticalAlignment="Center" Margin="0,0,4,0" ToolTip="How many seconds of silence before processing audio chunk"/>
-        <Slider x:Name="PauseDurationSlider" Width="100" Minimum="0.10" Maximum="2.00" TickFrequency="0.05"
+        <Slider x:Name="PauseDurationSlider" Width="100" Minimum="0.10" Maximum="1.00" TickFrequency="0.05"
                           IsSnapToTickEnabled="True" ValueChanged="SettingsSlider_ValueChanged"/>
         <TextBlock x:Name="PauseDurationValueText" Width="38" Margin="4,0,4,0" VerticalAlignment="Center"/>
 
@@ -75,31 +75,48 @@
         <TextBlock x:Name="MinChunkBeforePauseValueText" Width="38" Margin="4,0,4,0" VerticalAlignment="Center"/>
 
         <TextBlock x:Name="SpeechStartLabel" Text="Start thr:" VerticalAlignment="Center" Margin="0,0,4,0" ToolTip="Threshold RMS value to detect start of speech"/>
-        <Slider x:Name="SpeechStartThresholdSlider" Width="100" Minimum="0.0005" Maximum="0.1000" TickFrequency="0.0005"
+        <Slider x:Name="SpeechStartThresholdSlider" Width="100" Minimum="0.0010" Maximum="0.0100" TickFrequency="0.0005"
                           IsSnapToTickEnabled="True" ValueChanged="SettingsSlider_ValueChanged"/>
         <TextBlock x:Name="SpeechStartValueText" Width="55" Margin="4,0,4,0" VerticalAlignment="Center"/>
 
         <TextBlock x:Name="SpeechEndLabel" Text="End thr:" VerticalAlignment="Center" Margin="0,0,4,0" ToolTip="Threshold RMS value to mark the end of speech"/>
-        <Slider x:Name="SpeechEndThresholdSlider" Width="100" Minimum="0.0001" Maximum="0.1000" TickFrequency="0.0005"
+        <Slider x:Name="SpeechEndThresholdSlider" Width="100" Minimum="0.0001" Maximum="0.010" TickFrequency="0.0005"
                           IsSnapToTickEnabled="True" ValueChanged="SettingsSlider_ValueChanged"/>
         <TextBlock x:Name="SpeechEndValueText" Width="55" Margin="4,0,4,0" VerticalAlignment="Center"/>
         <TextBlock x:Name="SilenceThresholdLabel" Text="Silence thr:" VerticalAlignment="Center" Margin="0,0,4,0" ToolTip="Silence Threshold to mark the silance"/>
-        <Slider x:Name="SilenceThresholdSlider" Width="100" Minimum="0.001" Maximum="0.009" TickFrequency="0.001"
+        <Slider x:Name="SilenceThresholdSlider" Width="100" Minimum="0.0001" Maximum="0.009" TickFrequency="0.0005"
             IsSnapToTickEnabled="True" ValueChanged="SettingsSlider_ValueChanged"/>
         <TextBlock x:Name="SilenceThresholdText" Width="55" Margin="4,0,4,0" VerticalAlignment="Center"/>
       </ToolBar>
     </ToolBarTray>
 
-    <StatusBar DockPanel.Dock="Bottom">
-      <StatusBarItem>
-        <StackPanel Orientation="Horizontal">
-          <TextBlock x:Name="SessionTimerText" Text="0:00:00" VerticalAlignment="Center" Margin="4,0,8,0"/>
-          <TextBlock x:Name="ActiveRecordIndicator" Text="●" Margin="4,0" VerticalAlignment="Center" FontSize="16" Foreground="Gray"/>
-          <TextBlock x:Name="WhisperModeText" Text="[Whisper-recorder mode]" Foreground="#FF8C00" VerticalAlignment="Center" Margin="4,0" Visibility="Collapsed"/>
-          <TextBlock x:Name="RecordPathLabel" Width="Auto" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Margin="8,0,0,0"/>
-        </StackPanel>
-      </StatusBarItem>
-    </StatusBar>
+
+        <StatusBar DockPanel.Dock="Bottom">
+            <StatusBarItem HorizontalContentAlignment="Stretch">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Orientation="Horizontal" Grid.Column= "0">
+                        <TextBlock x:Name="SessionTimerText" Text="0:00:00" VerticalAlignment="Center" Margin="4,0,8,0"/>
+                        <TextBlock x:Name="ActiveRecordIndicator" Text="●" Margin="4,0" VerticalAlignment="Center" FontSize="16" Foreground="Gray"/>
+                        <TextBlock x:Name="WhisperModeText" Text="[Whisper-recorder mode]" Foreground="#FF8C00" VerticalAlignment="Center" Margin="4,0" Visibility="Collapsed"/>
+                        <TextBlock x:Name="StatusLabel" Width="Auto" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="8,0,0,0"/>
+                    </StackPanel>
+
+                    <TextBlock x:Name="CapturedStatusLabel" 
+                       FontFamily="Consolas"
+                       Grid.Column="1"
+                       TextTrimming="CharacterEllipsis" 
+                       VerticalAlignment="Center" 
+                       HorizontalAlignment="Right" 
+                       Margin="8,0,4,0"/>
+                </Grid>
+            </StatusBarItem>
+        </StatusBar>
+
 
     <!-- Transcript + Translation -->
     <Grid Margin="4">

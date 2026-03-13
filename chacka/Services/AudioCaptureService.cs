@@ -35,6 +35,7 @@ public class AudioCaptureService : IDisposable
     /// <summary>Fired on a background thread with 16 kHz mono float32 samples.</summary>
     public event Action<float[]>? AudioChunkReady;
     public event Action<string>? StatusChanged;
+    public event Action<string>? VoiceCaptured;
 
     /// <summary>How many seconds of audio to buffer before flushing to STT.</summary>
     public double MaxChunkDurationSeconds { get; set; } = 10.0;
@@ -69,7 +70,7 @@ public class AudioCaptureService : IDisposable
     {
         return !string.IsNullOrWhiteSpace(RecordingsDirectory)
             ? RecordingsDirectory
-            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "Chacka meeting recordings");
+            : Path.Combine("Chacka meeting recordings");
     }
 
     public static void CleanupStaleTempFiles()
@@ -163,10 +164,11 @@ public class AudioCaptureService : IDisposable
         }
         _lastPeak = peak;
         _lastRms = ComputeRms(e.Buffer, e.BytesRecorded);
-
         // Логика VAD (определение пауз) и Максимальной длины
         var now = DateTime.UtcNow;
-        bool speechDetected = _inSpeech ? _lastRms >= SpeechEndThreshold : _lastRms >= SpeechStartThreshold;
+        bool speechDetected = _inSpeech 
+            ? _lastRms >= SpeechEndThreshold 
+            : _lastRms >= SpeechStartThreshold;
 
         // Считаем ChunkDurationSeconds не жестким таймером, а "максимальной длиной до принудительного сброса", 
         // чтобы текст спикера, который говорит без пауз 15-20 секунд, все равно выводился на экран.
@@ -190,6 +192,9 @@ public class AudioCaptureService : IDisposable
                 return; // Выходим, буфер сброшен
             }
         }
+        var sp = speechDetected ? "●" : "○";
+        var isp = _inSpeech ? "●" : "○";
+        VoiceCaptured?.Invoke($"level: {_lastPeak:F6}, speechDetected [{sp}], inSpeech [{isp}]");
 
         // Если человек говорит без остановок дольше максимума, режем принудительно, 
         // или если копилась тишина дольше ChunkDurationSeconds времени
