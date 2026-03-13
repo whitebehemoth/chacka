@@ -18,6 +18,7 @@ public record LanguageInfo(string Code, string Name);
 public partial class MainWindow : Window
 {
     private sealed record UiLangOption(string Code, string Name);
+    private sealed record TranslationRequest(string Text, string SourceLanguageName, string TargetLanguageName);
 
     private readonly AppSettings _settings;
     private readonly AudioCaptureService _capture = new();
@@ -30,7 +31,9 @@ public partial class MainWindow : Window
         new("ru", "RU")
     ];
     private readonly ConcurrentQueue<float[]> _pendingChunks = new();
+    private readonly ConcurrentQueue<TranslationRequest> _pendingTranslations = new();
     private int _processingQueue;
+    private int _processingTranslations;
     private bool _suppressUiEvents = true;
     private const double MinUiFontSize = 8;
     private const double MaxUiFontSize = 24;
@@ -557,6 +560,55 @@ public partial class MainWindow : Window
         _ = ProcessChunkQueueAsync();
     }
 
+    private void EnqueueTranslation(string text, string sourceFullName, string targetFullName)
+    {
+        _pendingTranslations.Enqueue(new TranslationRequest(text, sourceFullName, targetFullName));
+        _ = ProcessTranslationQueueAsync();
+    }
+
+    private async Task ProcessTranslationQueueAsync()
+    {
+        if (Interlocked.Exchange(ref _processingTranslations, 1) == 1)
+            return;
+
+        try
+        {
+            string text = "", sourceLang = "", targetLang = "";
+            while (_pendingTranslations.TryDequeue(out var request))
+            {
+                text += request.Text + " ";
+                sourceLang = request.SourceLanguageName;
+                targetLang = request.TargetLanguageName;
+            }
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+
+                string translated = await _translator.TranslateAsync(
+                    text,
+                    sourceLang,
+                    targetLang);
+
+                Dispatcher.Invoke(() =>
+                {
+                    TranslationBox.AppendText(translated + Environment.NewLine);
+                    TranslationBox.ScrollToEnd();
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            Dispatcher.Invoke(() =>
+                MessageBox.Show(this, ex.Message, "Translation error", MessageBoxButton.OK, MessageBoxImage.Error));
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _processingTranslations, 0);
+
+            if (!_pendingTranslations.IsEmpty)
+                _ = ProcessTranslationQueueAsync();
+        }
+    }
+
     private async Task ProcessChunkQueueAsync()
     {
         if (Interlocked.Exchange(ref _processingQueue, 1) == 1)
@@ -587,14 +639,7 @@ public partial class MainWindow : Window
 
                     if (targetLang != null && targetLang.Code != sourceLang)
                     {
-                        string translated = await _translator.TranslateAsync(
-                            text, sourceFullName, targetLang.Name);
-
-                        Dispatcher.Invoke(() =>
-                        {
-                            TranslationBox.AppendText(translated + Environment.NewLine);
-                            TranslationBox.ScrollToEnd();
-                        });
+                        EnqueueTranslation(text, sourceFullName, targetLang.Name);
                     }
                 }
 
