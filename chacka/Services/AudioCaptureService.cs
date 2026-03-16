@@ -20,6 +20,7 @@ public class AudioCaptureService : IDisposable
     private MemoryStream _buffer = new();
     private WaveFormat? _captureFormat;
     private float _lastPeak;
+    private float _avgPeak;
     private float _lastRms;
     private bool _isCapturing;
     private DateTime _lastSoundTime = DateTime.UtcNow;
@@ -109,22 +110,38 @@ public class AudioCaptureService : IDisposable
     {
         if (_isCapturing || _device == null) return;
 
-        _capture = new WasapiLoopbackCapture(_device);
-        _captureFormat = _capture.WaveFormat;
-        _capture.DataAvailable += OnDataAvailable;
-        _capture.RecordingStopped += OnRecordingStopped;
+        try
+        {
+            _capture = new WasapiLoopbackCapture(_device);
+            _captureFormat = _capture.WaveFormat;
+            _capture.DataAvailable += OnDataAvailable;
+            _capture.RecordingStopped += OnRecordingStopped;
 
-        StartSessionRecording();
+            StartSessionRecording();
 
-        lock (_lock) { _buffer = new MemoryStream(); }
+            lock (_lock) { _buffer = new MemoryStream(); }
 
-        _lastSoundTime = DateTime.UtcNow;
+            _lastSoundTime = DateTime.UtcNow;
 
-        _inSpeech = false;
+            _inSpeech = false;
+            _avgPeak = 0f;
 
-        _capture.StartRecording();
-        _isCapturing = true;
-        StatusChanged?.Invoke($"Capturing: {_device.FriendlyName}");
+            _capture.StartRecording();
+            _isCapturing = true;
+            StatusChanged?.Invoke($"Capturing: {_device.FriendlyName}");
+        }
+        catch (System.Runtime.InteropServices.COMException ex)
+        {
+            Stop();
+            StatusChanged?.Invoke($"Device error: {ex.Message}");
+            throw new InvalidOperationException($"Cannot start capture on '{_device.FriendlyName}'. It may be disconnected or turned off.", ex);
+        }
+        catch (Exception ex)
+        {
+            Stop();
+            StatusChanged?.Invoke($"Capture error: {ex.Message}");
+            throw;
+        }
     }
 
     public void Stop()
@@ -194,8 +211,19 @@ public class AudioCaptureService : IDisposable
         }
         var sp = speechDetected ? "●" : "○";
         var isp = _inSpeech ? "●" : "○";
-        VoiceCaptured?.Invoke($"level: {_lastPeak:F6}, speechDetected [{sp}], inSpeech [{isp}]");
 
+        if (speechDetected)
+        {
+            float target = _lastPeak;
+            // Если сигнал растет — реагируем быстрее (Attack)
+            // Если сигнал падает — сглаживаем медленнее (Release)
+            float coef = (target > _avgPeak) ? 0.05f : 0.01f;
+
+            _avgPeak = _avgPeak * (1f - coef) + target * coef;
+        }
+
+        VoiceCaptured?.Invoke($"level: {_lastPeak:F6}, avg: {_avgPeak:F6} speechDetected [{sp}], inSpeech [{isp}]");
+        
         // Если человек говорит без остановок дольше максимума, режем принудительно, 
         // или если копилась тишина дольше ChunkDurationSeconds времени
         if (forceMaxDurationFlush)

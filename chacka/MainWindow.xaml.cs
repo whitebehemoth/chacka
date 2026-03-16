@@ -23,7 +23,7 @@ public partial class MainWindow : Window
     private readonly AppSettings _settings;
     private readonly AudioCaptureService _capture = new();
     private readonly WhisperRecognizer _recognizer = new();
-    private readonly TranslationService _translator = new();
+    private ITranslationService _translator = new AzureTranslationService();
     private readonly LanguageInfo[] _languages;
     private readonly UiLangOption[] _uiLanguages =
     [
@@ -120,8 +120,26 @@ public partial class MainWindow : Window
         else
         {
             LlmCombo.SelectedItem = llm;
-            _translator.UpdateOptions(_settings.Translation[llm]);
+            UpdateTranslator(_settings.Translation[llm]);
         }
+    }
+
+    private void UpdateTranslator(TranslationOptions options)
+    {
+        if (_translator != null)
+            _translator.StatusChanged -= app_StatusChanged;
+
+        if (string.Equals(options.Provider, "Azure", StringComparison.OrdinalIgnoreCase))
+        {
+            _translator = new AzureTranslationService();
+        }
+        else
+        {
+            _translator = new TranslationService(); // Default to OpenAI
+        }
+
+        _translator.StatusChanged += app_StatusChanged;
+        _translator.UpdateOptions(options);
     }
 
     private void InitializeWhisperCombo()
@@ -517,11 +535,11 @@ public partial class MainWindow : Window
     {
         if (_suppressUiEvents || LlmCombo.SelectedItem == null)
             return;
-            
+
         string selectedLlm = LlmCombo.SelectedItem.ToString()!;
         if (_settings.Translation.TryGetValue(selectedLlm, out var options))
         {
-            _translator.UpdateOptions(options);
+            UpdateTranslator(options);
         }
     }
 
@@ -618,6 +636,7 @@ public partial class MainWindow : Window
         {
             while (_pendingChunks.TryDequeue(out var samples))
             {
+                app_StatusChanged($"Chunks in queue({_pendingChunks.Count}), processing current of {samples.Length} B");
                 string sourceLang = Dispatcher.Invoke(() =>
                     (SourceLangCombo.SelectedItem as LanguageInfo)?.Code ?? "en");
 
@@ -639,7 +658,7 @@ public partial class MainWindow : Window
 
                     if (targetLang != null && targetLang.Code != sourceLang)
                     {
-                        EnqueueTranslation(text, sourceFullName, targetLang.Name);
+                        EnqueueTranslation(text, sourceLang, targetLang.Code);
                     }
                 }
 
@@ -687,7 +706,23 @@ public partial class MainWindow : Window
 
         _capture.SessionRecordingEnabled = RecordAudioCheckBox.IsChecked == true;
 
-        _capture.Start();
+        try
+        {
+            _capture.Start();
+        }
+        catch (InvalidOperationException ex)
+        {
+            MessageBox.Show(this, $"{ex.Message}\n\nSelected device is not available. Please select an active device.", 
+                "Device Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            LoadDevices(); // Offer device list refresh implicitly
+            return;
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, $"Failed to start capturing: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            return;
+        }
+
         StartBtn.IsEnabled = false;
         StopBtn.IsEnabled = true;
         RecordAudioCheckBox.IsEnabled = false;

@@ -6,7 +6,7 @@ using chacka.Options;
 
 namespace chacka.Services;
 
-public class TranslationService
+public class TranslationService : ITranslationService
 {
     private readonly HttpClient _http = new();
     private TranslationOptions _options = new();
@@ -14,6 +14,7 @@ public class TranslationService
     public void UpdateOptions(TranslationOptions options)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
+        StatusChanged?.Invoke($"Translating via OpenAI ({options.ModelName})");
     }
 
     public event Action<string>? StatusChanged;
@@ -25,7 +26,6 @@ public class TranslationService
 
         try
         {
-            StatusChanged?.Invoke("Translating via OpenAI...");
 
             string prompt = $"Translate the following text from {sourceLang} to {targetLang}:\n\n{text}";
 
