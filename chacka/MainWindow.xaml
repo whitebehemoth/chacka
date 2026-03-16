@@ -47,8 +47,23 @@
         <TextBlock x:Name="LlmLabel" Text="LLM:" VerticalAlignment="Center" Margin="4,0"/>
         <ComboBox x:Name="LlmCombo" Width="120" SelectionChanged="LlmCombo_SelectionChanged" />
         <TextBlock x:Name="LlmTempLabel" Text=" Temp:" VerticalAlignment="Center" Margin="4,0"/>
-        <Slider x:Name="LlmTempSlider" Width="60" Minimum="0" Maximum="2.0" TickFrequency="0.1" IsSnapToTickEnabled="True" ValueChanged="LlmTempSlider_ValueChanged"/>
-        <TextBlock x:Name="LlmTempValueText" Width="26" VerticalAlignment="Center" Margin="4,0"/>
+        <Grid Width="56" Margin="4,0,0,0">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="16"/>
+          </Grid.ColumnDefinitions>
+          <TextBox x:Name="LlmTempValueText" Grid.Column="0" VerticalContentAlignment="Center"
+                   LostKeyboardFocus="NumericValueTextBox_LostKeyboardFocus" PreviewKeyDown="NumericValueTextBox_PreviewKeyDown"/>
+          <Grid Grid.Column="1">
+            <Grid.RowDefinitions>
+              <RowDefinition Height="*"/>
+              <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+            <RepeatButton Grid.Row="0" Content="▲" Padding="0" FontSize="8" Click="NumericSpinButton_Click" Tag="LlmTempSlider:+"/>
+            <RepeatButton Grid.Row="1" Content="▼" Padding="0" FontSize="8" Click="NumericSpinButton_Click" Tag="LlmTempSlider:-"/>
+          </Grid>
+          <ScrollBar x:Name="LlmTempSlider" Visibility="Collapsed" Orientation="Horizontal" Minimum="0" Maximum="2.0" SmallChange="0.1" LargeChange="0.1" ValueChanged="LlmTempSlider_ValueChanged"/>
+        </Grid>
         <Separator/>
         <TextBlock x:Name="WhisperLabel" Text="Whisper:" VerticalAlignment="Center" Margin="4,0"/>
         <ComboBox x:Name="WhisperModelCombo" Width="80">
@@ -60,33 +75,123 @@
         </ComboBox>
         <Button x:Name="ApplyWhisperModelBtn" Content="↻" ToolTip="Apply Model" Click="ApplyWhisperModelBtn_Click" Padding="6,2"/>
         <TextBlock x:Name="WhisperTempLabel" Text=" Temp:" VerticalAlignment="Center" Margin="4,0"/>
-        <Slider x:Name="WhisperTempSlider" Width="60" Minimum="0" Maximum="1.0" TickFrequency="0.1" IsSnapToTickEnabled="True" ValueChanged="WhisperTempSlider_ValueChanged"/>
-        <TextBlock x:Name="WhisperTempValueText" Width="26" VerticalAlignment="Center" Margin="4,0"/>
+        <Grid Width="56" Margin="4,0,0,0">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="16"/>
+          </Grid.ColumnDefinitions>
+          <TextBox x:Name="WhisperTempValueText" Grid.Column="0" VerticalContentAlignment="Center"
+                   LostKeyboardFocus="NumericValueTextBox_LostKeyboardFocus" PreviewKeyDown="NumericValueTextBox_PreviewKeyDown"/>
+          <Grid Grid.Column="1">
+            <Grid.RowDefinitions>
+              <RowDefinition Height="*"/>
+              <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+            <RepeatButton Grid.Row="0" Content="▲" Padding="0" FontSize="8" Click="NumericSpinButton_Click" Tag="WhisperTempSlider:+"/>
+            <RepeatButton Grid.Row="1" Content="▼" Padding="0" FontSize="8" Click="NumericSpinButton_Click" Tag="WhisperTempSlider:-"/>
+          </Grid>
+          <ScrollBar x:Name="WhisperTempSlider" Visibility="Collapsed" Orientation="Horizontal" Minimum="0" Maximum="1.0" SmallChange="0.1" LargeChange="0.1" ValueChanged="WhisperTempSlider_ValueChanged"/>
+        </Grid>
       </ToolBar>
        <ToolBar x:Name="AudioToolbar" Band="1" BandIndex="0">
         <TextBlock x:Name="PauseDurationLabel" Text="Pause(s):" VerticalAlignment="Center" Margin="0,0,4,0" ToolTip="How many seconds of silence before processing audio chunk"/>
-        <Slider x:Name="PauseDurationSlider" Width="100" Minimum="0.10" Maximum="1.00" TickFrequency="0.05"
-                          IsSnapToTickEnabled="True" ValueChanged="SettingsSlider_ValueChanged"/>
-        <TextBlock x:Name="PauseDurationValueText" Width="38" Margin="4,0,4,0" VerticalAlignment="Center"/>
+        <Grid Width="60" Margin="0,0,4,0">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="16"/>
+          </Grid.ColumnDefinitions>
+          <TextBox x:Name="PauseDurationValueText" Grid.Column="0" VerticalContentAlignment="Center"
+                   LostKeyboardFocus="NumericValueTextBox_LostKeyboardFocus" PreviewKeyDown="NumericValueTextBox_PreviewKeyDown"/>
+          <Grid Grid.Column="1">
+            <Grid.RowDefinitions>
+              <RowDefinition Height="*"/>
+              <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+            <RepeatButton Grid.Row="0" Content="▲" Padding="0" FontSize="8" Click="NumericSpinButton_Click" Tag="PauseDurationSlider:+"/>
+            <RepeatButton Grid.Row="1" Content="▼" Padding="0" FontSize="8" Click="NumericSpinButton_Click" Tag="PauseDurationSlider:-"/>
+          </Grid>
+          <ScrollBar x:Name="PauseDurationSlider" Visibility="Collapsed" Orientation="Horizontal" Minimum="0.10" Maximum="2.00" SmallChange="0.01" LargeChange="0.05"
+                     ValueChanged="SettingsSlider_ValueChanged"/>
+        </Grid>
 
         <TextBlock x:Name="MinChunkLabel" Text="Min chunk(s):" VerticalAlignment="Center" Margin="0,0,4,0" ToolTip="Minimum seconds to capture before allowing pause interruption"/>
-        <Slider x:Name="MinChunkBeforePauseSlider" Width="100" Minimum="0.50" Maximum="3.00" TickFrequency="0.10"
-                          IsSnapToTickEnabled="True" ValueChanged="SettingsSlider_ValueChanged"/>
-        <TextBlock x:Name="MinChunkBeforePauseValueText" Width="38" Margin="4,0,4,0" VerticalAlignment="Center"/>
+        <Grid Width="60" Margin="0,0,4,0">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="16"/>
+          </Grid.ColumnDefinitions>
+          <TextBox x:Name="MinChunkBeforePauseValueText" Grid.Column="0" VerticalContentAlignment="Center"
+                   LostKeyboardFocus="NumericValueTextBox_LostKeyboardFocus" PreviewKeyDown="NumericValueTextBox_PreviewKeyDown"/>
+          <Grid Grid.Column="1">
+            <Grid.RowDefinitions>
+              <RowDefinition Height="*"/>
+              <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+            <RepeatButton Grid.Row="0" Content="▲" Padding="0" FontSize="8" Click="NumericSpinButton_Click" Tag="MinChunkBeforePauseSlider:+"/>
+            <RepeatButton Grid.Row="1" Content="▼" Padding="0" FontSize="8" Click="NumericSpinButton_Click" Tag="MinChunkBeforePauseSlider:-"/>
+          </Grid>
+          <ScrollBar x:Name="MinChunkBeforePauseSlider" Visibility="Collapsed" Orientation="Horizontal" Minimum="0.50" Maximum="20.00" SmallChange="0.50" LargeChange="0.10"
+                     ValueChanged="SettingsSlider_ValueChanged"/>
+        </Grid>
 
         <TextBlock x:Name="SpeechStartLabel" Text="Start thr:" VerticalAlignment="Center" Margin="0,0,4,0" ToolTip="Threshold RMS value to detect start of speech"/>
-        <Slider x:Name="SpeechStartThresholdSlider" Width="100" Minimum="0.0010" Maximum="0.0100" TickFrequency="0.0005"
-                          IsSnapToTickEnabled="True" ValueChanged="SettingsSlider_ValueChanged"/>
-        <TextBlock x:Name="SpeechStartValueText" Width="55" Margin="4,0,4,0" VerticalAlignment="Center"/>
+        <Grid Width="78" Margin="0,0,4,0">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="16"/>
+          </Grid.ColumnDefinitions>
+          <TextBox x:Name="SpeechStartValueText" Grid.Column="0" VerticalContentAlignment="Center"
+                   LostKeyboardFocus="NumericValueTextBox_LostKeyboardFocus" PreviewKeyDown="NumericValueTextBox_PreviewKeyDown"/>
+          <Grid Grid.Column="1">
+            <Grid.RowDefinitions>
+              <RowDefinition Height="*"/>
+              <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+            <RepeatButton Grid.Row="0" Content="▲" Padding="0" FontSize="8" Click="NumericSpinButton_Click" Tag="SpeechStartThresholdSlider:+"/>
+            <RepeatButton Grid.Row="1" Content="▼" Padding="0" FontSize="8" Click="NumericSpinButton_Click" Tag="SpeechStartThresholdSlider:-"/>
+          </Grid>
+          <ScrollBar x:Name="SpeechStartThresholdSlider" Visibility="Collapsed" Orientation="Horizontal" Minimum="0.0010" Maximum="10.0100" SmallChange="0.0001" LargeChange="0.0005"
+                     ValueChanged="SettingsSlider_ValueChanged"/>
+        </Grid>
 
         <TextBlock x:Name="SpeechEndLabel" Text="End thr:" VerticalAlignment="Center" Margin="0,0,4,0" ToolTip="Threshold RMS value to mark the end of speech"/>
-        <Slider x:Name="SpeechEndThresholdSlider" Width="100" Minimum="0.0001" Maximum="0.010" TickFrequency="0.0005"
-                          IsSnapToTickEnabled="True" ValueChanged="SettingsSlider_ValueChanged"/>
-        <TextBlock x:Name="SpeechEndValueText" Width="55" Margin="4,0,4,0" VerticalAlignment="Center"/>
+        <Grid Width="78" Margin="0,0,4,0">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="16"/>
+          </Grid.ColumnDefinitions>
+          <TextBox x:Name="SpeechEndValueText" Grid.Column="0" VerticalContentAlignment="Center"
+                   LostKeyboardFocus="NumericValueTextBox_LostKeyboardFocus" PreviewKeyDown="NumericValueTextBox_PreviewKeyDown"/>
+          <Grid Grid.Column="1">
+            <Grid.RowDefinitions>
+              <RowDefinition Height="*"/>
+              <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+            <RepeatButton Grid.Row="0" Content="▲" Padding="0" FontSize="8" Click="NumericSpinButton_Click" Tag="SpeechEndThresholdSlider:+"/>
+            <RepeatButton Grid.Row="1" Content="▼" Padding="0" FontSize="8" Click="NumericSpinButton_Click" Tag="SpeechEndThresholdSlider:-"/>
+          </Grid>
+          <ScrollBar x:Name="SpeechEndThresholdSlider" Visibility="Collapsed" Orientation="Horizontal" Minimum="0.0000" Maximum="10.010" SmallChange="0.0001" LargeChange="0.0005"
+                     ValueChanged="SettingsSlider_ValueChanged"/>
+        </Grid>
         <TextBlock x:Name="SilenceThresholdLabel" Text="Silence thr:" VerticalAlignment="Center" Margin="0,0,4,0" ToolTip="Silence Threshold to mark the silance"/>
-        <Slider x:Name="SilenceThresholdSlider" Width="100" Minimum="0.0001" Maximum="0.009" TickFrequency="0.0005"
-            IsSnapToTickEnabled="True" ValueChanged="SettingsSlider_ValueChanged"/>
-        <TextBlock x:Name="SilenceThresholdText" Width="55" Margin="4,0,4,0" VerticalAlignment="Center"/>
+        <Grid Width="78" Margin="0,0,4,0">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="16"/>
+          </Grid.ColumnDefinitions>
+          <TextBox x:Name="SilenceThresholdText" Grid.Column="0" VerticalContentAlignment="Center"
+                   LostKeyboardFocus="NumericValueTextBox_LostKeyboardFocus" PreviewKeyDown="NumericValueTextBox_PreviewKeyDown"/>
+          <Grid Grid.Column="1">
+            <Grid.RowDefinitions>
+              <RowDefinition Height="*"/>
+              <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+            <RepeatButton Grid.Row="0" Content="▲" Padding="0" FontSize="8" Click="NumericSpinButton_Click" Tag="SilenceThresholdSlider:+"/>
+            <RepeatButton Grid.Row="1" Content="▼" Padding="0" FontSize="8" Click="NumericSpinButton_Click" Tag="SilenceThresholdSlider:-"/>
+          </Grid>
+          <ScrollBar x:Name="SilenceThresholdSlider" Visibility="Collapsed" Orientation="Horizontal" Minimum="0.0001" Maximum="1.009" SmallChange="0.0001" LargeChange="0.0005"
+                     ValueChanged="SettingsSlider_ValueChanged"/>
+        </Grid>
       </ToolBar>
     </ToolBarTray>
 

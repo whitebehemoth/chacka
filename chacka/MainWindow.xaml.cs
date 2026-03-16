@@ -1,9 +1,11 @@
 ﻿using System.IO;
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Windows;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using chacka.Options;
@@ -322,6 +324,94 @@ public partial class MainWindow : Window
         WhisperTempValueText.Text = WhisperTempSlider.Value.ToString("F1");
     }
 
+    private void NumericValueTextBox_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+    {
+        ApplyNumericValueFromText(sender as System.Windows.Controls.TextBox);
+    }
+
+    private void NumericValueTextBox_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter)
+            return;
+
+        ApplyNumericValueFromText(sender as System.Windows.Controls.TextBox);
+        Keyboard.ClearFocus();
+        e.Handled = true;
+    }
+
+    private void ApplyNumericValueFromText(System.Windows.Controls.TextBox? textBox)
+    {
+        if (textBox is null)
+            return;
+
+        RangeBase? numeric = textBox.Name switch
+        {
+            nameof(PauseDurationValueText) => GetNumericRangeByName(nameof(PauseDurationSlider)),
+            nameof(MinChunkBeforePauseValueText) => GetNumericRangeByName(nameof(MinChunkBeforePauseSlider)),
+            nameof(SpeechStartValueText) => GetNumericRangeByName(nameof(SpeechStartThresholdSlider)),
+            nameof(SpeechEndValueText) => GetNumericRangeByName(nameof(SpeechEndThresholdSlider)),
+            nameof(SilenceThresholdText) => GetNumericRangeByName(nameof(SilenceThresholdSlider)),
+            nameof(LlmTempValueText) => GetNumericRangeByName(nameof(LlmTempSlider)),
+            nameof(WhisperTempValueText) => GetNumericRangeByName(nameof(WhisperTempSlider)),
+            _ => null
+        };
+
+        if (numeric is null)
+            return;
+
+        if (!double.TryParse(textBox.Text, NumberStyles.Float, CultureInfo.CurrentCulture, out var value) &&
+            !double.TryParse(textBox.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out value))
+        {
+            UpdateSettingsLabels();
+            return;
+        }
+
+        value = Math.Clamp(value, numeric.Minimum, numeric.Maximum);
+
+        if (Math.Abs(numeric.Value - value) > 0.0000001)
+            numeric.Value = value;
+        else
+            UpdateSettingsLabels();
+    }
+
+    private void NumericSpinButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not RepeatButton { Tag: string tag })
+            return;
+
+        var split = tag.Split(':', 2);
+        if (split.Length != 2)
+            return;
+
+        RangeBase? numeric = GetNumericRangeByName(split[0]);
+        if (numeric is null)
+            return;
+
+        int direction = split[1] == "+" ? 1 : -1;
+        double step = numeric is ScrollBar scrollBar ? scrollBar.SmallChange : 1;
+        double next = Math.Clamp(numeric.Value + (direction * step), numeric.Minimum, numeric.Maximum);
+
+        if (Math.Abs(numeric.Value - next) > 0.0000001)
+            numeric.Value = next;
+        else
+            UpdateSettingsLabels();
+    }
+
+    private RangeBase? GetNumericRangeByName(string name)
+    {
+        return name switch
+        {
+            nameof(PauseDurationSlider) => PauseDurationSlider,
+            nameof(MinChunkBeforePauseSlider) => MinChunkBeforePauseSlider,
+            nameof(SpeechStartThresholdSlider) => SpeechStartThresholdSlider,
+            nameof(SpeechEndThresholdSlider) => SpeechEndThresholdSlider,
+            nameof(SilenceThresholdSlider) => SilenceThresholdSlider,
+            nameof(LlmTempSlider) => LlmTempSlider,
+            nameof(WhisperTempSlider) => WhisperTempSlider,
+            _ => null
+        };
+    }
+
     private void LlmTempSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
     {
         if (_suppressUiEvents) return;
@@ -409,46 +499,46 @@ public partial class MainWindow : Window
         UpdateRecordIndicator();
         UpdateActiveRecordIndicator();
 
-        LlmLabel.Text = ru ? "Модель ИИ:" : "LLM:";
+        LlmLabel.Text = ru ? "Перевод через:" : "Translator:";
         LlmCombo.ToolTip = ru ? "Профиль LLM для перевода" : "LLM profile for translation";
         LlmTempLabel.Text = ru ? " Темп:" : " Temp:";
-        LlmTempSlider.ToolTip = ru ? "Температура генерации LLM. Выше - больше креативности." : "LLM generation temperature. Higher = more creative.";
-        
+        LlmTempValueText.ToolTip = ru ? "Температура генерации LLM. Выше - больше креативности." : "LLM generation temperature. Higher = more creative.";
+
         WhisperLabel.Text = ru ? "Модель Whisper:" : "Whisper:";
         WhisperModelCombo.ToolTip = ru ? "Размер модели распознавания речи" : "Whisper model size for speech recognition";
         ApplyWhisperModelBtn.ToolTip = ru ? "Применить модель Whisper" : "Apply Whisper Model";
         WhisperTempLabel.Text = ru ? " Темп:" : " Temp:";
-        WhisperTempSlider.ToolTip = ru ? "Температура Whisper. 0 для детерминированного результата." : "Whisper temperature. 0 for deterministic output.";
+        WhisperTempValueText.ToolTip = ru ? "Температура Whisper. 0 для детерминированного результата." : "Whisper temperature. 0 for deterministic output.";
 
         FromLabel.Text = ru ? "Из:" : "From:";
         ToLabel.Text = ru ? "В:" : "To:";
-        UiLangLabel.Text = ru ? "Язык UI:" : "UI:";
+        UiLangLabel.Text = ru ? "Язык:" : "UI:";
         SourceLangCombo.ToolTip = ru ? "Язык оригинальной речи" : "Source speech language";
         TargetLangCombo.ToolTip = ru ? "Язык перевода" : "Translation target language";
         UiLanguageCombo.ToolTip = ru ? "Язык интерфейса" : "Interface language";
 
-        PauseDurationLabel.Text = ru ? "Пауза(с):" : "Pause(s):";
-        PauseDurationSlider.ToolTip = ru
+        PauseDurationLabel.Text = ru ? "Пауза (сек):" : "Pause(s):";
+        PauseDurationValueText.ToolTip = ru
             ? "Pause duration - Длина тишины перед завершением фразы. Увеличьте, если фразы режутся рано."
             : "Pause duration - Silence required to close phrase. Increase if phrases are cut too early.";
 
-        MinChunkLabel.Text = ru ? "Мин. чанк(с):" : "Min chunk(s):";
-        MinChunkBeforePauseSlider.ToolTip = ru
-            ? "Minimum chunk duration - Минимальная длина чанка до срабатывания паузы."
+        MinChunkLabel.Text = ru ? "Мин. длительность (сек):" : "Min chunk(s):";
+        MinChunkBeforePauseValueText.ToolTip = ru
+            ? "Minimum chunk duration - Минимальная длина чанка для распознования речи до срабатывания паузы."
             : "Minimum chunk duration - Minimal chunk length before pause flush is allowed.";
 
-        SpeechStartLabel.Text = ru ? "Порог старта:" : "Start thr:";
-        SpeechStartThresholdSlider.ToolTip = ru
+        SpeechStartLabel.Text = ru ? "Амплитуда начало речи:" : "Start thr:";
+        SpeechStartValueText.ToolTip = ru
             ? "Speech start threshold - Порог начала речи. Повысьте, если шум запускает ложные фразы."
             : "Speech start threshold - Speech start sensitivity. Raise if noise starts false phrases.";
 
-        SpeechEndLabel.Text = ru ? "Порог конца:" : "End thr:";
-        SpeechEndThresholdSlider.ToolTip = ru
+        SpeechEndLabel.Text = ru ? "Амплитуда конца речи:" : "End thr:";
+        SpeechEndValueText.ToolTip = ru
             ? "Speech end threshold - Порог конца речи. Понизьте, если в шуме плохо определяется конец фразы."
             : "Speech end threshold - End-of-speech sensitivity. Lower when too noisy to capture end of phrase.";
 
         SilenceThresholdLabel.Text = ru ? "Порог тишины:" : "Silence thr:";
-        SilenceThresholdSlider.ToolTip = ru
+        SilenceThresholdText.ToolTip = ru
            ? "Silence threshold - Амплитуда, ниже которой, считаем, что звука нет."
            : "Silence threshold - Amplitude below which audio is considered silence.";
 
@@ -459,7 +549,7 @@ public partial class MainWindow : Window
             ? "Ctrl + колесо: изменить размер шрифта"
             : "Ctrl + mouse wheel: change font size";
         TranslationBox.ToolTip = TranscriptBox.ToolTip;
-        
+
         MenuMainToolbar.Header = ru ? "Основная панель" : "Main Toolbar";
         MenuAudioToolbar.Header = ru ? "Панель аудио-настроек" : "Audio Settings";
         MenuLlmsToolbar.Header = ru ? "Панель нейросетей" : "LLM Toolbar";
