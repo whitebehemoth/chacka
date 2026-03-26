@@ -40,11 +40,11 @@ public class WhisperRecognizer : IDisposable
 
     public bool IsLoaded => _factory != null;
 
-    public async Task<string> RecognizeAsync(float[] samples, string language = "en", float temperature = 0.0f)
+    public async Task<string> RecognizeAsync(float[] samples, string language = "en", float temperature = 0.0f, CancellationToken cancellationToken = default)
     {
         if (_factory == null) return string.Empty;
 
-        await _semaphore.WaitAsync();
+        await _semaphore.WaitAsync(cancellationToken);
         try
         {
             // Настройки под чистый звук с митингов
@@ -58,7 +58,7 @@ public class WhisperRecognizer : IDisposable
             var sb = new StringBuilder();
             
             // Whisper.net умеет работать напрямую с float[], избегая создания WAV!
-            await foreach (var segment in processor.ProcessAsync(samples))
+            await foreach (var segment in processor.ProcessAsync(samples).WithCancellation(cancellationToken))
             {
                 if (!string.IsNullOrWhiteSpace(segment.Text))
                     sb.Append(segment.Text); 
@@ -73,14 +73,14 @@ public class WhisperRecognizer : IDisposable
         }
     }
 
-    public async Task<string> RecognizeFromWaveFileAsync(string path, string language = "en", float temperature = 0.0f)
+    public async Task<string> RecognizeFromWaveFileAsync(string path, string language = "en", float temperature = 0.0f, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(path)) throw new ArgumentException("Path must be provided", nameof(path));
         if (!File.Exists(path)) throw new FileNotFoundException("Audio file not found", path);
 
         if (_factory == null) return string.Empty;
 
-        await _semaphore.WaitAsync();
+        await _semaphore.WaitAsync(cancellationToken);
         try
         {
             await using var processor = _factory.CreateBuilder()
@@ -92,7 +92,7 @@ public class WhisperRecognizer : IDisposable
             await using var stream = File.OpenRead(path);
             
             var sb = new StringBuilder();
-            await foreach (var segment in processor.ProcessAsync(stream))
+            await foreach (var segment in processor.ProcessAsync(stream).WithCancellation(cancellationToken))
             {
                 if (!string.IsNullOrWhiteSpace(segment.Text))
                     sb.Append(segment.Text);

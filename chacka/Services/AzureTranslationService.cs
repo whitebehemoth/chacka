@@ -18,7 +18,7 @@ public class AzureTranslationService : ITranslationService
         StatusChanged?.Invoke("Translating via Azure Translator...");
     }
 
-    public async Task<string> TranslateAsync(string text, string sourceLang, string targetLang)
+    public async Task<string> TranslateAsync(string text, string sourceLang, string targetLang, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(text)) return string.Empty;
 
@@ -54,8 +54,8 @@ public class AzureTranslationService : ITranslationService
                 request.Headers.Add("Ocp-Apim-Subscription-Region", _options.AzureRegion);
             }
 
-            using var response = await _http.SendAsync(request);
-            string responseBody = await response.Content.ReadAsStringAsync();
+            using var response = await _http.SendAsync(request, cancellationToken);
+            string responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
 
             if (!response.IsSuccessStatusCode)
             {
@@ -74,6 +74,10 @@ public class AzureTranslationService : ITranslationService
             }
 
             return "[Empty response from Azure Translator]";
+        }
+        catch (OperationCanceledException)
+        {
+            return string.Empty;
         }
         catch (Exception ex)
         {

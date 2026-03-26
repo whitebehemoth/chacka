@@ -146,6 +146,16 @@ public class AudioCaptureService : IDisposable
 
     public void Stop()
     {
+        StopCore(finalizeSessionRecording: true, flushBuffer: true, statusText: "Stopped");
+    }
+
+    public void Abort()
+    {
+        StopCore(finalizeSessionRecording: false, flushBuffer: false, statusText: "Stopped (abort)");
+    }
+
+    private void StopCore(bool finalizeSessionRecording, bool flushBuffer, string statusText)
+    {
         if (_capture != null)
         {
             _capture.StopRecording();
@@ -153,11 +163,17 @@ public class AudioCaptureService : IDisposable
             _capture = null;
         }
 
-        FlushBuffer();
-        StopSessionRecording();
+        if (flushBuffer)
+            FlushBuffer();
+
+        if (finalizeSessionRecording)
+            StopSessionRecording();
+        else
+            CancelSessionRecording();
+
         _silenceFlushPending = false;
         _isCapturing = false;
-        StatusChanged?.Invoke("Stopped");
+        StatusChanged?.Invoke(statusText);
     }
 
     private void OnDataAvailable(object? sender, WaveInEventArgs e)
@@ -209,6 +225,7 @@ public class AudioCaptureService : IDisposable
                 return; // Выходим, буфер сброшен
             }
         }
+
         var sp = speechDetected ? "●" : "○";
         var isp = _inSpeech ? "●" : "○";
 
@@ -232,6 +249,21 @@ public class AudioCaptureService : IDisposable
             _lastSoundTime = now;
             FlushBuffer();
         }
+    }
+
+    private void CancelSessionRecording()
+    {
+        string? tempWavPath;
+        lock (_lock)
+        {
+            _sessionWriter?.Dispose();
+            _sessionWriter = null;
+            tempWavPath = _sessionTempWavPath;
+            _sessionTempWavPath = null;
+        }
+
+        if (!string.IsNullOrWhiteSpace(tempWavPath))
+            TryDeleteFileWithRetry(tempWavPath);
     }
 
     private void OnRecordingStopped(object? sender, StoppedEventArgs e)
@@ -485,7 +517,7 @@ public class AudioCaptureService : IDisposable
 
     public void Dispose()
     {
-        Stop();
+        Abort();
         FlushPendingCleanup();
         GC.SuppressFinalize(this);
     }

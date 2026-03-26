@@ -20,7 +20,7 @@ public class TranslationService : ITranslationService
     public event Action<string>? StatusChanged;
 
     
-    public async Task<string> TranslateAsync(string text, string sourceLang, string targetLang)
+    public async Task<string> TranslateAsync(string text, string sourceLang, string targetLang, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(text)) return string.Empty;
 
@@ -51,8 +51,8 @@ public class TranslationService : ITranslationService
 
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _options.ApiKey);
 
-            using var response = await _http.SendAsync(request);
-            string responseBody = await response.Content.ReadAsStringAsync();
+            using var response = await _http.SendAsync(request, cancellationToken);
+            string responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
 
             if (!response.IsSuccessStatusCode)
             {
@@ -71,6 +71,10 @@ public class TranslationService : ITranslationService
             }
 
             return "[Empty response]";
+        }
+        catch (OperationCanceledException)
+        {
+            return string.Empty;
         }
         catch (Exception ex)
         {
