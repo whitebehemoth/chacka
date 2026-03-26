@@ -1,7 +1,5 @@
 using System.IO;
-using System.Threading;
 using NAudio.CoreAudioApi;
-using NAudio.MediaFoundation;
 using NAudio.Wave;
 using NAudio.Wave.SampleProviders;
 
@@ -21,12 +19,11 @@ public class AudioCaptureService : IDisposable
     private readonly object _lock = new();
     private MemoryStream _buffer = new();
     private WaveFormat? _captureFormat;
-    private System.Threading.Timer? _chunkTimer;
     private float _lastPeak;
+    private float _avgPeak;
     private float _lastRms;
     private bool _isCapturing;
     private DateTime _lastSoundTime = DateTime.UtcNow;
-    private bool _silenceFlushPending;
     private bool _inSpeech;
     private WaveFileWriter? _sessionWriter;
     private string? _sessionTempWavPath;
@@ -37,11 +34,11 @@ public class AudioCaptureService : IDisposable
 
     /// <summary>Fired on a background thread with 16 kHz mono float32 samples.</summary>
     public event Action<float[]>? AudioChunkReady;
-    public event Action<string>? RecordingSaved;
     public event Action<string>? StatusChanged;
+    public event Action<string>? VoiceCaptured;
 
     /// <summary>How many seconds of audio to buffer before flushing to STT.</summary>
-    public double ChunkDurationSeconds { get; set; } = 10.0;
+    public double MaxChunkDurationSeconds { get; set; } = 10.0;
 
     /// <summary>How many seconds of silence must pass before flushing mid-chunk.</summary>
     public double PauseDurationSeconds { get; set; } = 0.8;
@@ -60,7 +57,7 @@ public class AudioCaptureService : IDisposable
 
     /// <summary>Record full captured session into a single MP3 file between Start/Stop.</summary>
     public bool SessionRecordingEnabled { get; set; }
-
+    public static string RecordingsDirectory { get; set; } = "";
     public string? LastRecordingPath => _lastRecordingPath;
     public bool IsCapturing => _isCapturing;
 
@@ -71,9 +68,9 @@ public class AudioCaptureService : IDisposable
 
     public static string GetRecordsDirectory()
     {
-        return Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
-            "Chacka meeting recordings");
+        return !string.IsNullOrWhiteSpace(RecordingsDirectory)
+            ? RecordingsDirectory
+            : Path.Combine("Chacka meeting recordings");
     }
 
     public static void CleanupStaleTempFiles()
@@ -112,34 +109,52 @@ public class AudioCaptureService : IDisposable
     {
         if (_isCapturing || _device == null) return;
 
-        _capture = new WasapiLoopbackCapture(_device);
-        _captureFormat = _capture.WaveFormat;
-        _capture.DataAvailable += OnDataAvailable;
-        _capture.RecordingStopped += OnRecordingStopped;
+        try
+        {
+            _capture = new WasapiLoopbackCapture(_device);
+            _captureFormat = _capture.WaveFormat;
+            _capture.DataAvailable += OnDataAvailable;
+            _capture.RecordingStopped += OnRecordingStopped;
 
-        StartSessionRecording();
+            StartSessionRecording();
 
-        lock (_lock) { _buffer = new MemoryStream(); }
+            lock (_lock) { _buffer = new MemoryStream(); }
 
-        _chunkTimer = new System.Threading.Timer(
-            OnChunkTimer, null,
-            TimeSpan.FromSeconds(ChunkDurationSeconds),
-            TimeSpan.FromSeconds(ChunkDurationSeconds));
+            _lastSoundTime = DateTime.UtcNow;
 
-        _lastSoundTime = DateTime.UtcNow;
-        _silenceFlushPending = false;
-        _inSpeech = false;
+            _inSpeech = false;
+            _avgPeak = 0f;
 
-        _capture.StartRecording();
-        _isCapturing = true;
-        StatusChanged?.Invoke($"Capturing: {_device.FriendlyName}");
+            _capture.StartRecording();
+            _isCapturing = true;
+            StatusChanged?.Invoke($"Capturing: {_device.FriendlyName}");
+        }
+        catch (System.Runtime.InteropServices.COMException ex)
+        {
+            Stop();
+            StatusChanged?.Invoke($"Device error: {ex.Message}");
+            throw new InvalidOperationException($"Cannot start capture on '{_device.FriendlyName}'. It may be disconnected or turned off.", ex);
+        }
+        catch (Exception ex)
+        {
+            Stop();
+            StatusChanged?.Invoke($"Capture error: {ex.Message}");
+            throw;
+        }
     }
 
     public void Stop()
     {
-        _chunkTimer?.Dispose();
-        _chunkTimer = null;
+        StopCore(finalizeSessionRecording: true, flushBuffer: true, statusText: "Stopped");
+    }
 
+    public void Abort()
+    {
+        StopCore(finalizeSessionRecording: false, flushBuffer: false, statusText: "Stopped (abort)");
+    }
+
+    private void StopCore(bool finalizeSessionRecording, bool flushBuffer, string statusText)
+    {
         if (_capture != null)
         {
             _capture.StopRecording();
@@ -147,11 +162,16 @@ public class AudioCaptureService : IDisposable
             _capture = null;
         }
 
-        FlushBuffer();
-        StopSessionRecording();
-        _silenceFlushPending = false;
+        if (flushBuffer)
+            FlushBuffer();
+
+        if (finalizeSessionRecording)
+            StopSessionRecording();
+        else
+            CancelSessionRecording();
+
         _isCapturing = false;
-        StatusChanged?.Invoke("Stopped");
+        StatusChanged?.Invoke(statusText);
     }
 
     private void OnDataAvailable(object? sender, WaveInEventArgs e)
@@ -166,7 +186,7 @@ public class AudioCaptureService : IDisposable
             bufferedSeconds = GetBufferedSecondsNoLock();
         }
 
-        // Update peak
+        // Высчитываем пики и RMS текущего фрейма
         float peak = 0f;
         for (int i = 0; i + 4 <= e.BytesRecorded; i += 4)
         {
@@ -175,33 +195,73 @@ public class AudioCaptureService : IDisposable
         }
         _lastPeak = peak;
         _lastRms = ComputeRms(e.Buffer, e.BytesRecorded);
+        // Логика VAD (определение пауз) и Максимальной длины
+        var now = DateTime.UtcNow;
+        bool speechDetected = _inSpeech 
+            ? _lastRms >= SpeechEndThreshold 
+            : _lastRms >= SpeechStartThreshold;
 
-        if (PauseDurationSeconds > 0)
+        // Считаем ChunkDurationSeconds не жестким таймером, а "максимальной длиной до принудительного сброса", 
+        // чтобы текст спикера, который говорит без пауз 15-20 секунд, все равно выводился на экран.
+        bool forceMaxDurationFlush = bufferedSeconds >= MaxChunkDurationSeconds;
+
+        if (speechDetected)
         {
-            var now = DateTime.UtcNow;
-            bool speechDetected = _inSpeech
-                ? _lastRms >= SpeechEndThreshold
-                : _lastRms >= SpeechStartThreshold;
+            _inSpeech = true;
+            _lastSoundTime = now;
+        }
+        else
+        {
+            // Проверяем, достаточно ли длилась пауза
+            bool pauseExceeded = (now - _lastSoundTime).TotalSeconds >= PauseDurationSeconds;
 
-            if (speechDetected)
+            if (_inSpeech && pauseExceeded && bufferedSeconds >= MinChunkDurationBeforePauseFlushSeconds)
             {
-                _inSpeech = true;
-                _lastSoundTime = now;
-                _silenceFlushPending = false;
-            }
-            else if (!_silenceFlushPending
-                     && (now - _lastSoundTime).TotalSeconds >= PauseDurationSeconds
-                     && bufferedSeconds >= MinChunkDurationBeforePauseFlushSeconds)
-            {
+                // Сработал сброс по натуральной паузе
                 _inSpeech = false;
-                _silenceFlushPending = true;
                 FlushBuffer();
-            }
-            else
-            {
-                _inSpeech = false;
+                return; // Выходим, буфер сброшен
             }
         }
+
+        var sp = speechDetected ? "●" : "○";
+        var isp = _inSpeech ? "●" : "○";
+
+        if (speechDetected)
+        {
+            float target = _lastPeak;
+            // Если сигнал растет — реагируем быстрее (Attack)
+            // Если сигнал падает — сглаживаем медленнее (Release)
+            float coef = (target > _avgPeak) ? 0.05f : 0.01f;
+
+            _avgPeak = _avgPeak * (1f - coef) + target * coef;
+        }
+
+        VoiceCaptured?.Invoke($"level: {_lastPeak:F6}, avg: {_avgPeak:F6} speechDetected [{sp}], inSpeech [{isp}]");
+        
+        // Если человек говорит без остановок дольше максимума, режем принудительно, 
+        // или если копилась тишина дольше ChunkDurationSeconds времени
+        if (forceMaxDurationFlush)
+        {
+            _inSpeech = false;
+            _lastSoundTime = now;
+            FlushBuffer();
+        }
+    }
+
+    private void CancelSessionRecording()
+    {
+        string? tempWavPath;
+        lock (_lock)
+        {
+            _sessionWriter?.Dispose();
+            _sessionWriter = null;
+            tempWavPath = _sessionTempWavPath;
+            _sessionTempWavPath = null;
+        }
+
+        if (!string.IsNullOrWhiteSpace(tempWavPath))
+            TryDeleteFileWithRetry(tempWavPath);
     }
 
     private void OnRecordingStopped(object? sender, StoppedEventArgs e)
@@ -209,8 +269,6 @@ public class AudioCaptureService : IDisposable
         if (e.Exception != null)
             StatusChanged?.Invoke($"Capture error: {e.Exception.Message}");
     }
-
-    private void OnChunkTimer(object? state) => FlushBuffer();
 
     private void FlushBuffer()
     {
@@ -256,13 +314,19 @@ public class AudioCaptureService : IDisposable
 
         var resampled = new WdlResamplingSampleProvider(mono, 16000);
 
-        var result = new List<float>();
+        // Предполагаемый размер 16кгц буфера (с небольшим запасом)
+        // Формула: (длина_байт / байт_в_секунду) * 16000
+        int estimatedSamples = (int)((rawData.Length / (double)sourceFormat.AverageBytesPerSecond) * 16000) + 1000;
+        
+        var result = new List<float>(estimatedSamples); // Избавляемся от тысяч аллокаций памяти (memory leaks)
         var readBuffer = new float[16000];
         int read;
+        
         while ((read = resampled.Read(readBuffer, 0, readBuffer.Length)) > 0)
         {
-            for (int i = 0; i < read; i++)
-                result.Add(readBuffer[i]);
+            // Специальный оптимизированный метод с .NET 8 / C# 12+ (если используете)
+            // Иначе можно использовать AddRange или просто оставить как есть, List capacity не даст утечек
+            result.AddRange(new ReadOnlySpan<float>(readBuffer, 0, read));
         }
 
         return result.ToArray();
@@ -340,7 +404,6 @@ public class AudioCaptureService : IDisposable
             MediaFoundationEncoder.EncodeToMp3(reader, mp3Path);
 
             _lastRecordingPath = mp3Path;
-            RecordingSaved?.Invoke(mp3Path);
 
             TryDeleteFileWithRetry(tempWavPath);
         }
@@ -432,14 +495,6 @@ public class AudioCaptureService : IDisposable
         }
     }
 
-    public string GetStatus()
-    {
-        string device = _device?.FriendlyName ?? "None";
-        return _isCapturing
-            ? $"Capturing: {device} | Peak: {_lastPeak:F4} | Rms: {_lastRms:F4}"
-            : $"Stopped | Device: {device}";
-    }
-
     private static MMDevice? GetDefaultDevice()
     {
         var enumerator = new MMDeviceEnumerator();
@@ -452,7 +507,7 @@ public class AudioCaptureService : IDisposable
 
     public void Dispose()
     {
-        Stop();
+        Abort();
         FlushPendingCleanup();
         GC.SuppressFinalize(this);
     }

@@ -6,27 +6,28 @@ using chacka.Options;
 
 namespace chacka.Services;
 
-public class TranslationService
+/// <summary>
+/// Translates text via an OpenAI-compatible chat completions endpoint.
+/// </summary>
+public class TranslationService : ITranslationService
 {
     private readonly HttpClient _http = new();
-    private readonly TranslationOptions _options;
-
-    public TranslationService(TranslationOptions options)
-    {
-        _options = options ?? throw new ArgumentNullException(nameof(options));
-    }
+    private TranslationOptions _options = new();
 
     public event Action<string>? StatusChanged;
 
-    
-    public async Task<string> TranslateAsync(string text, string sourceLang, string targetLang)
+    public void UpdateOptions(TranslationOptions options)
+    {
+        _options = options ?? throw new ArgumentNullException(nameof(options));
+        StatusChanged?.Invoke($"Translating via OpenAI ({options.ModelName})");
+    }
+
+    public async Task<string> TranslateAsync(string text, string sourceLang, string targetLang, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(text)) return string.Empty;
 
         try
         {
-            StatusChanged?.Invoke("Translating via OpenAI...");
-
             string prompt = $"Translate the following text from {sourceLang} to {targetLang}:\n\n{text}";
 
             var payload = new Dictionary<string, object>
@@ -36,11 +37,9 @@ public class TranslationService
                     new { role = "system", content = "You are a concise translator. Return only the translated text." },
                     new { role = "user", content = prompt }
                 },
+                ["model"] = _options.ModelName,
                 ["temperature"] = _options.Temperature
             };
-
-            payload["model"] = _options.ModelName;
-            
 
             string url = _options.ApiUrl;
             var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
@@ -51,13 +50,13 @@ public class TranslationService
 
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _options.ApiKey);
 
-            using var response = await _http.SendAsync(request);
-            string responseBody = await response.Content.ReadAsStringAsync();
+            using var response = await _http.SendAsync(request, cancellationToken);
+            string responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
 
             if (!response.IsSuccessStatusCode)
             {
                 StatusChanged?.Invoke($"Translation error: {response.StatusCode}");
-                return $"[Translation error: {response.StatusCode}]";
+                return $"[Translation error: {responseBody}]";
             }
 
             using var document = JsonDocument.Parse(responseBody);
@@ -72,6 +71,10 @@ public class TranslationService
 
             return "[Empty response]";
         }
+        catch (OperationCanceledException)
+        {
+            return string.Empty;
+        }
         catch (Exception ex)
         {
             StatusChanged?.Invoke($"Translation error: {ex.Message}");
@@ -79,5 +82,3 @@ public class TranslationService
         }
     }
 }
-
-
