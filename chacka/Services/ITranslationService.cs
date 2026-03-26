@@ -1,9 +1,10 @@
-using System;
-using System.Threading.Tasks;
 using chacka.Options;
 
 namespace chacka.Services;
 
+/// <summary>
+/// Common interface for all translation backends (Azure Translator, OpenAI, etc.).
+/// </summary>
 public interface ITranslationService
 {
     event Action<string>? StatusChanged;

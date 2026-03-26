@@ -6,10 +6,15 @@ using chacka.Options;
 
 namespace chacka.Services;
 
+/// <summary>
+/// Translates text via an OpenAI-compatible chat completions endpoint.
+/// </summary>
 public class TranslationService : ITranslationService
 {
     private readonly HttpClient _http = new();
     private TranslationOptions _options = new();
+
+    public event Action<string>? StatusChanged;
 
     public void UpdateOptions(TranslationOptions options)
     {
@@ -17,16 +22,12 @@ public class TranslationService : ITranslationService
         StatusChanged?.Invoke($"Translating via OpenAI ({options.ModelName})");
     }
 
-    public event Action<string>? StatusChanged;
-
-    
     public async Task<string> TranslateAsync(string text, string sourceLang, string targetLang, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(text)) return string.Empty;
 
         try
         {
-
             string prompt = $"Translate the following text from {sourceLang} to {targetLang}:\n\n{text}";
 
             var payload = new Dictionary<string, object>
@@ -36,11 +37,9 @@ public class TranslationService : ITranslationService
                     new { role = "system", content = "You are a concise translator. Return only the translated text." },
                     new { role = "user", content = prompt }
                 },
+                ["model"] = _options.ModelName,
                 ["temperature"] = _options.Temperature
             };
-
-            payload["model"] = _options.ModelName;
-            
 
             string url = _options.ApiUrl;
             var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
@@ -83,5 +82,3 @@ public class TranslationService : ITranslationService
         }
     }
 }
-
-

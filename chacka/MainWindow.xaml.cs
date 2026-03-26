@@ -1,7 +1,8 @@
-﻿using System.IO;
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Globalization;
+using System.IO;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Windows;
@@ -20,13 +21,12 @@ public record LanguageInfo(string Code, string Name);
 public partial class MainWindow : Window
 {
     private sealed record UiLangOption(string Code, string Name);
-    private sealed record TranslationRequest(string Text, string SourceLanguageName, string TargetLanguageName);
+    private sealed record TranslationRequest(string Text, string SourceLangCode, string TargetLangCode);
 
     private readonly AppSettings _settings;
     private readonly AudioCaptureService _capture = new();
     private readonly WhisperRecognizer _recognizer = new();
     private ITranslationService _translator = new AzureTranslationService();
-    private readonly LanguageInfo[] _languages;
     private readonly UiLangOption[] _uiLanguages =
     [
         new("en", "EN"),
@@ -35,17 +35,16 @@ public partial class MainWindow : Window
     private readonly ConcurrentQueue<float[]> _pendingChunks = new();
     private readonly ConcurrentQueue<TranslationRequest> _pendingTranslations = new();
     private readonly CancellationTokenSource _shutdownCts = new();
-    private int _processingQueue;
-    private int _processingTranslations;
-    private int _isShuttingDown;
+    private int _processingQueue;          // 1 = chunk queue is being processed
+    private int _processingTranslations;   // 1 = translation queue is being processed
+    private int _isShuttingDown;           // 1 = app is shutting down
     private int _forceCloseStarted;
     private volatile string _cachedSourceLangCode = "en";
-    private volatile string _cachedSourceLangName = "English";
     private volatile LanguageInfo? _cachedTargetLang;
-    private bool _suppressUiEvents = true;
+    private bool _suppressUiEvents = true; // guards against recursive UI events during initialization
     private const double MinUiFontSize = 8;
     private const double MaxUiFontSize = 24;
-    private System.Windows.Threading.DispatcherTimer _sessionTimer = new();
+    private readonly System.Windows.Threading.DispatcherTimer _sessionTimer = new();
     private DateTime _sessionStartTime;
 
     public MainWindow()
@@ -54,6 +53,7 @@ public partial class MainWindow : Window
 
         AudioCaptureService.CleanupStaleTempFiles();
 
+        // Load persisted settings (falls back to defaults if missing)
         _settings = App.Configuration.GetSection("AppSettings").Get<AppSettings>() ?? new AppSettings();
         _capture.MaxChunkDurationSeconds = _settings.MaxChunkDurationSeconds;
         _capture.PauseDurationSeconds = _settings.PauseDurationSeconds;
@@ -67,13 +67,6 @@ public partial class MainWindow : Window
         _recognizer.StatusChanged += app_StatusChanged;
         _translator.StatusChanged += app_StatusChanged;
         AudioCaptureService.RecordingsDirectory = _settings.RecordingsDirectory;
-
-        _languages = new[]
-        {
-            new LanguageInfo("en", "English"),
-            new LanguageInfo("ru", "Russian"),
-            new LanguageInfo("fr", "French"),
-        };
 
         InitializeLanguages();
         InitializeLlmCombo();
@@ -91,7 +84,16 @@ public partial class MainWindow : Window
         _ = InitializeWhisperAsync();
     }
 
-    private void app_StatusChanged(string obj)
+    /// <summary>Updates main status bar text from any thread (recognizer, translator, capture).</summary>
+    private void app_StatusChanged(string obj) =>
+        PostToUiIfAlive(() => StatusLabel.Text = obj);
+
+    /// <summary>Updates voice-level indicator from capture thread.</summary>
+    private void capture_StatusChanged(string obj) =>
+        PostToUiIfAlive(() => CapturedStatusLabel.Text = obj);
+
+    /// <summary>Safely posts an action to the UI thread, skipping if shutdown is in progress.</summary>
+    private void PostToUiIfAlive(Action action)
     {
         if (Volatile.Read(ref _isShuttingDown) == 1)
             return;
@@ -101,23 +103,11 @@ public partial class MainWindow : Window
             if (Volatile.Read(ref _isShuttingDown) == 1)
                 return;
 
-            StatusLabel.Text = obj;
-        });
-    }
-    private void capture_StatusChanged(string obj)
-    {
-        if (Volatile.Read(ref _isShuttingDown) == 1)
-            return;
-
-        Dispatcher.BeginInvoke(() =>
-        {
-            if (Volatile.Read(ref _isShuttingDown) == 1)
-                return;
-
-            CapturedStatusLabel.Text = obj;
+            action();
         });
     }
 
+    /// <summary>Populates source/target language combos from config.</summary>
     private void InitializeLanguages()
     {
         var languages = _settings.SupportedLanguages.Select(kvp => new LanguageInfo(kvp.Key, kvp.Value)).ToArray();
@@ -128,7 +118,6 @@ public partial class MainWindow : Window
             ?? languages.First();
         TargetLangCombo.SelectedItem = languages.FirstOrDefault(l => l.Code == _settings.DefaultTargetLanguage)
             ?? languages.Skip(1).FirstOrDefault() ?? languages.First();
-
     }
 
     private void InitializeLlmCombo()
@@ -138,7 +127,7 @@ public partial class MainWindow : Window
             ?? _settings.Translation.Keys.FirstOrDefault();
         if (llm is null)
         {
-            MessageBox.Show($"Translation LLM was not found, check the configuration or repair the app", "Corrypted config", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show($"Translation LLM was not found, check the configuration or repair the app", "Corrupted config", MessageBoxButton.OK, MessageBoxImage.Error);
             Application.Current.Shutdown();
         }
         else
@@ -148,10 +137,10 @@ public partial class MainWindow : Window
         }
     }
 
+    /// <summary>Swaps the active translation service based on provider type.</summary>
     private void UpdateTranslator(TranslationOptions options)
     {
-        if (_translator != null)
-            _translator.StatusChanged -= app_StatusChanged;
+        _translator.StatusChanged -= app_StatusChanged;
 
         if (string.Equals(options.Provider, "Azure", StringComparison.OrdinalIgnoreCase))
         {
@@ -208,7 +197,6 @@ public partial class MainWindow : Window
     {
         var src = SourceLangCombo.SelectedItem as LanguageInfo;
         _cachedSourceLangCode = src?.Code ?? "en";
-        _cachedSourceLangName = src?.Name ?? "English";
         _cachedTargetLang = TargetLangCombo.SelectedItem as LanguageInfo;
     }
 
@@ -284,7 +272,6 @@ public partial class MainWindow : Window
 
         ApplyOutputFontSize(_settings.OutputFontSize);
         ApplyUiLanguage(_settings.UiLanguage);
-        //UpdateRecordingPath(_capture.LastRecordingPath);
         UpdateSettingsLabels();
         UpdateCachedLanguages();
         UpdateWhisperModeIndicator();
@@ -297,13 +284,6 @@ public partial class MainWindow : Window
             return;
 
         _suppressUiEvents = true;
-        //if (SpeechEndThresholdSlider.Value >= SpeechStartThresholdSlider.Value)
-        //{
-        //    if (ReferenceEquals(sender, SpeechEndThresholdSlider))
-        //        SpeechEndThresholdSlider.Value = Math.Max(SpeechEndThresholdSlider.Minimum, SpeechStartThresholdSlider.Value - 0.0005);
-        //    else
-        //        SpeechStartThresholdSlider.Value = Math.Min(SpeechStartThresholdSlider.Maximum, SpeechEndThresholdSlider.Value + 0.0005);
-        //}
 
         _settings.PauseDurationSeconds = PauseDurationSlider.Value;
         _settings.MinChunkDurationBeforePauseFlushSeconds = MinChunkBeforePauseSlider.Value;
@@ -484,117 +464,6 @@ public partial class MainWindow : Window
         SaveUserSettings();
     }
 
-    private void UpdateRecordIndicator()
-    {
-        bool enabled = RecordAudioCheckBox.IsChecked == true;
-        
-        RecordIndicator.Foreground = enabled ? Brushes.Red : Brushes.Gray;
-        RecordIndicator.ToolTip = _settings.UiLanguage == "ru"
-            ? (enabled ? "Запись включена" : "Запись выключена")
-            : (enabled ? "Recording enabled" : "Recording disabled");
-    }
-
-    private void UpdateActiveRecordIndicator()
-    {
-        bool isCapturing = (_capture?.IsCapturing ?? false) && (RecordAudioCheckBox.IsChecked == true);
-        ActiveRecordIndicator.Foreground = isCapturing ? Brushes.Red : Brushes.Black;
-        ActiveRecordIndicator.ToolTip = _settings.UiLanguage == "ru"
-            ? (isCapturing ? "Запись идёт" : "Запись остановлена")
-            : (isCapturing ? "Recording in progress" : "Recording stopped");
-
-    }
-
-    private void ApplyUiLanguage(string lang)
-    {
-        bool ru = lang == "ru";
-        string recordsDir = AudioCaptureService.GetRecordsDirectory();
-
-        Title = ru ? "Секретарь Чакка" : "Meeting assistant Chacka";
-
-        DeviceLabel.Text = ru ? "Устройство:" : "Device:";
-        RefreshDevicesBtn.ToolTip = ru ? "Обновить список устройств" : "Refresh audio devices";
-        DevicesCombo.ToolTip = ru ? "Источник системного звука для распознавания" : "System audio source for recognition";
-
-        StartBtn.Content = ru ? "▶ Старт" : "▶ Start";
-        StartBtn.ToolTip = ru ? "Начать захват и распознавание" : "Start capture and recognition";
-        StopBtn.Content = ru ? "⏹ Стоп" : "⏹ Stop";
-        StopBtn.ToolTip = ru ? "Остановить захват" : "Stop capture";
-
-        RecordAudioCheckBox.Content = ru ? "Запись" : "Record";
-        RecordAudioCheckBox.ToolTip = ru
-            ? $"Сохранять весь аудиопоток между Старт/Стоп в один MP3. Папка: {recordsDir}"
-            : $"Save all captured audio between Start/Stop into one MP3. Folder: {recordsDir}";
-        OpenRecordFolderBtn.ToolTip = ru
-            ? $"Открыть папку записей: {recordsDir}"
-            : $"Open recordings folder: {recordsDir}";
-        UpdateRecordIndicator();
-        UpdateActiveRecordIndicator();
-
-        LlmLabel.Text = ru ? "Перевод через:" : "Translator:";
-        LlmCombo.ToolTip = ru ? "Профиль LLM для перевода" : "LLM profile for translation";
-        LlmTempLabel.Text = ru ? "Креативность:" : " Temp:";
-        LlmTempValueText.ToolTip = ru ? "Температура генерации LLM. [0..1] Выше - больше креативности." : "LLM generation temperature. Higher = more creative.";
-
-        WhisperLabel.Text = ru ? "Рспознать через Whisper:" : "Whisper:";
-        WhisperModelCombo.ToolTip = ru ? "Размер модели распознавания речи" : "Whisper model size for speech recognition";
-        ApplyWhisperModelBtn.ToolTip = ru ? "Применить модель Whisper" : "Apply Whisper Model";
-        WhisperTempLabel.Text = ru ? " Креативность:" : " Temp:";
-        WhisperTempValueText.ToolTip = ru ? "Температура креативности Whisper. [0..1], 0 для детерминированного результата." : "Whisper temperature. 0 for deterministic output.";
-
-        FromLabel.Text = ru ? "Из:" : "From:";
-        ToLabel.Text = ru ? "В:" : "To:";
-        UiLangLabel.Text = ru ? "Язык:" : "UI:";
-        SourceLangCombo.ToolTip = ru ? "Язык оригинальной речи" : "Source speech language";
-        TargetLangCombo.ToolTip = ru ? "Язык перевода" : "Translation target language";
-        UiLanguageCombo.ToolTip = ru ? "Язык интерфейса" : "Interface language";
-        PauseDurationLabel.Text = ru ? "Пауза между фразами:" : "Pause(s):";
-        PauseDurationValueText.ToolTip = ru
-            ? "Pause duration - Длина тишины в секундах перед завершением фразы. Увеличьте, если фразы режутся рано."
-            : "Pause duration - Silence required to close phrase. Increase if phrases are cut too early.";
-
-        MinChunkLabel.Text = ru ? "Мин. длина фразы:" : "Min chunk(s):";
-        MinChunkBeforePauseValueText.ToolTip = ru
-            ? "Minimum chunk duration - Минимальная длина чанка в секундах для распознования речи до срабатывания паузы."
-            : "Minimum chunk duration - Minimal chunk length before pause flush is allowed.";
-
-        SpeechStartLabel.Text = ru ? "Амплитуда начала:" : "Start thr:";
-        SpeechStartValueText.ToolTip = ru
-            ? "Speech start threshold - Порог начала речи. Повысьте, если шум запускает ложные фразы."
-            : "Speech start threshold - Speech start sensitivity. Raise if noise starts false phrases.";
-
-        SpeechEndLabel.Text = ru ? "Амплитуда конца:" : "End thr:";
-        SpeechEndValueText.ToolTip = ru
-            ? "Speech end threshold - Порог конца речи. Понизьте, если в шуме плохо определяется конец фразы."
-            : "Speech end threshold - End-of-speech sensitivity. Lower when too noisy to capture end of phrase.";
-
-        SilenceThresholdLabel.Text = ru ? "Амплитуда \"тишины\":" : "Silence thr:";
-        SilenceThresholdText.ToolTip = ru
-           ? "Silence threshold - Амплитуда, ниже которой, считаем, что звука нет."
-           : "Silence threshold - Amplitude below which audio is considered silence.";
-
-        TranscriptHeader.Text = ru ? "Оригинал" : "Transcript (source)";
-        TranslationHeader.Text = ru ? "Перевод" : "Translation";
-
-        TranscriptBox.ToolTip = ru
-            ? "Ctrl + колесо: изменить размер шрифта"
-            : "Ctrl + mouse wheel: change font size";
-        TranslationBox.ToolTip = TranscriptBox.ToolTip;
-
-        MenuMainToolbar.Header = ru ? "Основная панель" : "Main Toolbar";
-        MenuAudioToolbar.Header = ru ? "Панель аудио-настроек" : "Audio Settings";
-        MenuLlmsToolbar.Header = ru ? "Панель нейросетей" : "LLM Toolbar";
-
-        MenuTranscriptCopy.Header = ru ? "Копировать" : "Copy";
-        MenuTranscriptSave.Header = ru ? "Сохранить в файл..." : "Save to File...";
-        MenuTranscriptClear.Header = ru ? "Очистить текст" : "Clear text";
-
-        MenuTranslationCopy.Header = ru ? "Копировать" : "Copy";
-        MenuTranslationSave.Header = ru ? "Сохранить в файл..." : "Save to File...";
-        MenuTranslationClear.Header = ru ? "Очистить текст" : "Clear text";
-
-        //UpdateRecordingPath(_capture.LastRecordingPath);
-    }
-
     private void OpenRecordFolderBtn_Click(object sender, RoutedEventArgs e)
     {
         string dir = AudioCaptureService.GetRecordsDirectory();
@@ -692,6 +561,7 @@ public partial class MainWindow : Window
         if (LLMToolbar != null) LLMToolbar.Visibility = _settings.LlmToolbarVisible ? Visibility.Visible : Visibility.Collapsed;
     }
 
+    /// <summary>Callback from AudioCaptureService when a speech chunk is ready for STT.</summary>
     private void OnAudioChunkReady(float[] samples)
     {
         if (Volatile.Read(ref _isShuttingDown) == 1)
@@ -701,15 +571,20 @@ public partial class MainWindow : Window
         _ = ProcessChunkQueueAsync();
     }
 
-    private void EnqueueTranslation(string text, string sourceFullName, string targetFullName)
+    /// <summary>Enqueues recognized text for translation and kicks the translation pipeline.</summary>
+    private void EnqueueTranslation(string text, string sourceLangCode, string targetLangCode)
     {
         if (Volatile.Read(ref _isShuttingDown) == 1)
             return;
 
-        _pendingTranslations.Enqueue(new TranslationRequest(text, sourceFullName, targetFullName));
+        _pendingTranslations.Enqueue(new TranslationRequest(text, sourceLangCode, targetLangCode));
         _ = ProcessTranslationQueueAsync();
     }
 
+    /// <summary>
+    /// Single-threaded translation pipeline. Drains queued requests, merges consecutive
+    /// texts into one batch, sends to the active translator, and appends result to UI.
+    /// </summary>
     private async Task ProcessTranslationQueueAsync()
     {
         if (Volatile.Read(ref _isShuttingDown) == 1)
@@ -720,19 +595,21 @@ public partial class MainWindow : Window
 
         try
         {
-            string text = "", sourceLang = "", targetLang = "";
+            var textBatch = new StringBuilder();
+            string sourceLang = "", targetLang = "";
             while (_pendingTranslations.TryDequeue(out var request))
             {
                 if (Volatile.Read(ref _isShuttingDown) == 1)
                     return;
 
-                text += request.Text + " ";
-                sourceLang = request.SourceLanguageName;
-                targetLang = request.TargetLanguageName;
+                textBatch.Append(request.Text).Append(' ');
+                sourceLang = request.SourceLangCode;
+                targetLang = request.TargetLangCode;
             }
+
+            string text = textBatch.ToString().TrimEnd();
             if (Volatile.Read(ref _isShuttingDown) == 0 && !string.IsNullOrWhiteSpace(text))
             {
-
                 string translated = await _translator.TranslateAsync(
                     text,
                     sourceLang,
@@ -777,6 +654,10 @@ public partial class MainWindow : Window
         }
     }
 
+    /// <summary>
+    /// Single-threaded STT pipeline. Drains audio chunks, recognizes via Whisper,
+    /// appends transcript to UI, and enqueues translation if source != target language.
+    /// </summary>
     private async Task ProcessChunkQueueAsync()
     {
         if (Volatile.Read(ref _isShuttingDown) == 1)
@@ -792,10 +673,9 @@ public partial class MainWindow : Window
                 if (Volatile.Read(ref _isShuttingDown) == 1)
                     return;
 
-                app_StatusChanged($"Chunks in queue({_pendingChunks.Count}), processing current of {samples.Length} B");
+                app_StatusChanged($"Chunks in queue({_pendingChunks.Count}), processing current of {samples.Length} samples");
                 string sourceLang = _cachedSourceLangCode;
                 LanguageInfo? targetLang = _cachedTargetLang;
-                string sourceFullName = _cachedSourceLangName;
 
                 string text = await _recognizer.RecognizeAsync(samples, sourceLang, _settings.WhisperTemperature, _shutdownCts.Token);
 
@@ -815,7 +695,6 @@ public partial class MainWindow : Window
                         EnqueueTranslation(text, sourceLang, targetLang.Code);
                     }
                 }
-
             }
         }
         catch (OperationCanceledException)
@@ -905,8 +784,7 @@ public partial class MainWindow : Window
         StartBtn.IsEnabled = true;
         StopBtn.IsEnabled = false;
         RecordAudioCheckBox.IsEnabled = true;
-        //UpdateRecordingPath(_capture.LastRecordingPath);
-        
+
         _sessionTimer.Stop();
         UpdateActiveRecordIndicator();
     }
@@ -969,6 +847,10 @@ public partial class MainWindow : Window
         _ = ForceCloseAsync();
     }
 
+    /// <summary>
+    /// Graceful shutdown: signal all background work to stop, drain queues,
+    /// persist settings, dispose resources, then force-exit the process.
+    /// </summary>
     private async Task ForceCloseAsync()
     {
         Interlocked.Exchange(ref _isShuttingDown, 1);

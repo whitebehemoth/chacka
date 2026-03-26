@@ -5,6 +5,9 @@ using chacka.Options;
 
 namespace chacka.Services;
 
+/// <summary>
+/// Translates text using the Azure Cognitive Services Translator REST API.
+/// </summary>
 public class AzureTranslationService : ITranslationService
 {
     private readonly HttpClient _http = new();

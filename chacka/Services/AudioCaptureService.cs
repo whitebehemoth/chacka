@@ -24,7 +24,6 @@ public class AudioCaptureService : IDisposable
     private float _lastRms;
     private bool _isCapturing;
     private DateTime _lastSoundTime = DateTime.UtcNow;
-    private bool _silenceFlushPending;
     private bool _inSpeech;
     private WaveFileWriter? _sessionWriter;
     private string? _sessionTempWavPath;
@@ -171,7 +170,6 @@ public class AudioCaptureService : IDisposable
         else
             CancelSessionRecording();
 
-        _silenceFlushPending = false;
         _isCapturing = false;
         StatusChanged?.Invoke(statusText);
     }
@@ -495,14 +493,6 @@ public class AudioCaptureService : IDisposable
             _cleanupTimer = null;
             _pendingTempCleanup.Clear();
         }
-    }
-
-    public string GetStatus()
-    {
-        string device = _device?.FriendlyName ?? "None";
-        return _isCapturing
-            ? $"Capturing: {device} | Peak: {_lastPeak:F4} | Rms: {_lastRms:F4}"
-            : $"Stopped | Device: {device}";
     }
 
     private static MMDevice? GetDefaultDevice()
