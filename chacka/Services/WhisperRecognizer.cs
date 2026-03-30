@@ -1,9 +1,12 @@
 ﻿using System.IO;
+using System.Runtime.CompilerServices;
 using System.Text;
 using Whisper.net;
 using Whisper.net.Ggml;
 
 namespace chacka.Services;
+
+public record TranscriptSegment(TimeSpan Start, TimeSpan End, string Text);
 
 public class WhisperRecognizer : IDisposable
 {
@@ -99,6 +102,38 @@ public class WhisperRecognizer : IDisposable
             }
 
             return sb.ToString().Trim();
+        }
+        finally
+        {
+            _semaphore.Release();
+        }
+    }
+
+    public async IAsyncEnumerable<TranscriptSegment> ProcessFileStreamingAsync(
+        float[] samples,
+        string language = "en",
+        float temperature = 0.0f,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        if (_factory == null) yield break;
+
+        await _semaphore.WaitAsync(cancellationToken);
+        try
+        {
+            // Beam Search + оптимизации для длинных записей
+            await using var processor = _factory.CreateBuilder()
+                .WithLanguage(language)
+                .WithBeamSearchSamplingStrategy()
+                .WithEntropyThreshold(2.4f)
+                .WithTemperature(temperature)
+                .WithThreads(Math.Max(1, Environment.ProcessorCount / 2))
+                .Build();
+
+            await foreach (var segment in processor.ProcessAsync(samples).WithCancellation(cancellationToken))
+            {
+                if (!string.IsNullOrWhiteSpace(segment.Text))
+                    yield return new TranscriptSegment(segment.Start, segment.End, segment.Text.Trim());
+            }
         }
         finally
         {

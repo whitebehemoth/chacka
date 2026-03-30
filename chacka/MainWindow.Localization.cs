@@ -24,6 +24,8 @@ public partial class MainWindow
         DeviceLabel.Text = ru ? "Устройство:" : "Device:";
         RefreshDevicesBtn.ToolTip = ru ? "Обновить список устройств" : "Refresh audio devices";
         DevicesCombo.ToolTip = ru ? "Источник системного звука для распознавания" : "System audio source for recognition";
+        OpenFileBtn.Content = ru ? "🎧 Открыть запись" : "🎧 Open";
+        OpenFileBtn.ToolTip = ru ? "Открыть аудиозапись (mp3/wav) для транскрипции" : "Open audio recording (mp3/wav) for transcription";
 
         // Start / Stop
         StartBtn.Content = ru ? "▶ Старт" : "▶ Start";

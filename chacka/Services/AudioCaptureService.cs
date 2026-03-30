@@ -495,6 +495,29 @@ public class AudioCaptureService : IDisposable
         }
     }
 
+    /// <summary>Loads an audio file (mp3/wav) and returns 16 kHz mono float samples for Whisper.</summary>
+    public static float[] LoadAudioFileAs16kMono(string filePath)
+    {
+        using var reader = new AudioFileReader(filePath);
+
+        ISampleProvider mono = reader.WaveFormat.Channels > 1
+            ? new StereoToMonoSampleProvider(reader)
+            : (ISampleProvider)reader;
+
+        var resampled = new WdlResamplingSampleProvider(mono, 16000);
+
+        long estimatedSamples = (long)(reader.TotalTime.TotalSeconds * 16000) + 16000;
+        var result = new List<float>((int)Math.Min(estimatedSamples, int.MaxValue / 2));
+        var buffer = new float[16000];
+        int read;
+        while ((read = resampled.Read(buffer, 0, buffer.Length)) > 0)
+        {
+            result.AddRange(new ReadOnlySpan<float>(buffer, 0, read));
+        }
+
+        return result.ToArray();
+    }
+
     private static MMDevice? GetDefaultDevice()
     {
         var enumerator = new MMDeviceEnumerator();

@@ -6,7 +6,7 @@ transcribes it with **Whisper**, and translates on the fly.
 
 ---
 
-## [Portable ZIP win/x64](https://github.com/whitebehemoth/chacka/releases/download/v1.1.0/chacka-win-x64-portable.zip)
+## [Portable ZIP win/x64](https://github.com/whitebehemoth/chacka/releases/download/v1.1.1/chacka-win-x64-portable.zip)
 
 ---
 
@@ -21,6 +21,8 @@ It captures the system audio output via WASAPI loopback, so it picks up **every 
 your computer plays**: remote speakers in a video call, a presentation, or even your
 own microphone if it routes through the system mixer. No browser extension or virtual
 audio driver required.
+You can also open an audio file (mp3/wav) for transcription + translation - quality 
+is usually better than real-time capture.
 
 ### How it works
 
@@ -38,6 +40,7 @@ System audio -> WASAPI loopback capture
 - **Speech-to-text** - Whisper (tiny / base / small / medium / large); runs locally
 - **Translation** - Azure Cognitive Translator or any OpenAI-compatible endpoint
 - **Session recording** - optional full-session MP3 recording between Start / Stop
+- **Transcribe/translate recorded** - Open an audio file (mp3/wav) for transcription + translation - quality is usually better than real-time capture
 - **Speech tuning** - adjustable pause duration, min chunk length, speech start/end thresholds, silence threshold
 - **UI languages** - English / Russian
 - **Text zoom** - Ctrl + mouse wheel in transcript / translation panels
@@ -96,6 +99,8 @@ Output: `bin/Release/net10.0-windows/win-x64/publish`
 голоса собеседников в Zoom/Teams, звук в браузере и даже ваш микрофон,
 если он проходит через системный микшер. Не требует расширений для браузера
 или виртуальных аудиодрайверов.
+Можно также открыть аудиофайл (mp3/wav) для транскрипта + перевода - качество обычно выше, 
+чем при захвате в реальном времени.
 
 ### Как это работает
 
@@ -113,6 +118,7 @@ Output: `bin/Release/net10.0-windows/win-x64/publish`
 - **Распознавание речи** - Whisper (tiny / base / small / medium / large); работает локально
 - **Перевод** - Azure Cognitive Translator или любой OpenAI-совместимый endpoint
 - **Запись сессии** - опциональная запись всей сессии в MP3 между Старт / Стоп
+- **Распознание/перевод записанного** - Можно открыть аудиофайл (mp3/wav) для транскрипта + перевода (качество обычно выше)
 - **Настройка речи** - регулировка паузы, минимальной длины фразы, порогов начала/конца речи, порога тишины
 - **Языки интерфейса** - Английский / Русский
 - **Масштаб текста** - Ctrl + колесо мыши в панелях оригинала / перевода

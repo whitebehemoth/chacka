@@ -24,6 +24,7 @@
         <ComboBox x:Name="DevicesCombo" Width="300"
                           DisplayMemberPath="Name" SelectedValuePath="Id"/>
         <Button x:Name="RefreshDevicesBtn" Content="⟳" ToolTip="Refresh devices" Click="RefreshDevices_Click" Padding="6,2"/>
+        <Button x:Name="OpenFileBtn" Content="🎧" ToolTip="Open audio recording for transcription" Click="OpenFile_Click" Padding="6,2"/>
         <Separator/>
         <Button x:Name="StartBtn" Content="▶ Start" Click="Start_Click" Padding="8,2" IsDefault="True"/>
         <Button x:Name="StopBtn"  Content="⏹ Stop"  Click="Stop_Click"  Padding="8,2" IsEnabled="False" IsCancel="True"/>
@@ -214,6 +215,7 @@
                         <TextBlock x:Name="SessionTimerText" Text="0:00:00" VerticalAlignment="Center" Margin="4,0,8,0"/>
                         <TextBlock x:Name="ActiveRecordIndicator" Text="●" Margin="4,0" VerticalAlignment="Center" FontSize="16" Foreground="Gray"/>
                         <TextBlock x:Name="WhisperModeText" Text="[Whisper-recorder mode]" Foreground="#FF8C00" VerticalAlignment="Center" Margin="4,0" Visibility="Collapsed"/>
+                        <TextBlock x:Name="FileProgressText" Text="" Foreground="#0066CC" VerticalAlignment="Center" Margin="4,0" Visibility="Collapsed"/>
                         <TextBlock x:Name="StatusLabel" Width="Auto" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="8,0,0,0"/>
                     </StackPanel>
 

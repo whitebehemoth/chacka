@@ -42,6 +42,8 @@ public partial class MainWindow : Window
     private volatile string _cachedSourceLangCode = "en";
     private volatile LanguageInfo? _cachedTargetLang;
     private bool _suppressUiEvents = true; // guards against recursive UI events during initialization
+    private CancellationTokenSource? _fileProcessingCts;
+    private bool _isProcessingFile;
     private const double MinUiFontSize = 8;
     private const double MaxUiFontSize = 24;
     private readonly System.Windows.Threading.DispatcherTimer _sessionTimer = new();
@@ -724,6 +726,167 @@ public partial class MainWindow : Window
 
     private void RefreshDevices_Click(object sender, RoutedEventArgs e) => LoadDevices();
 
+    private async void OpenFile_Click(object sender, RoutedEventArgs e)
+    {
+        if (!_recognizer.IsLoaded)
+        {
+            MessageBox.Show(this,
+                _settings.UiLanguage == "ru"
+                    ? "Модель Whisper ещё не загружена. Подождите."
+                    : "Whisper model is not loaded yet. Please wait.",
+                "Whisper", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        var dlg = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = _settings.UiLanguage == "ru" ? "Открыть аудиозапись" : "Open audio recording",
+            Filter = "Audio files (*.mp3;*.wav)|*.mp3;*.wav|All files (*.*)|*.*",
+            InitialDirectory = AudioCaptureService.GetRecordsDirectory()
+        };
+
+        if (dlg.ShowDialog(this) != true)
+            return;
+
+        // Очищаем окна перед обработкой нового файла
+        TranscriptBox.Clear();
+        TranslationBox.Clear();
+
+        await ProcessRecordingFileAsync(dlg.FileName);
+    }
+
+    private async Task ProcessRecordingFileAsync(string filePath)
+    {
+        _isProcessingFile = true;
+        _fileProcessingCts = new CancellationTokenSource();
+        var ct = _fileProcessingCts.Token;
+
+        SetFileProcessingUiState(active: true);
+
+        string fileName = System.IO.Path.GetFileName(filePath);
+        UpdateFileProgress(_settings.UiLanguage == "ru"
+            ? $"Загрузка: {fileName}…"
+            : $"Loading: {fileName}…");
+
+        try
+        {
+            // Load and resample audio on a background thread
+            float[] samples = await Task.Run(() => AudioCaptureService.LoadAudioFileAs16kMono(filePath), ct);
+
+            double totalSeconds = samples.Length / 16000.0;
+            string totalDuration = TimeSpan.FromSeconds(totalSeconds).ToString(@"h\:mm\:ss");
+
+            UpdateFileProgress(_settings.UiLanguage == "ru"
+                ? $"Обработка: {fileName} ({totalDuration})…"
+                : $"Processing: {fileName} ({totalDuration})…");
+
+            UpdateCachedLanguages();
+            string sourceLang = _cachedSourceLangCode;
+            LanguageInfo? targetLang = _cachedTargetLang;
+            int segmentCount = 0;
+            int lastTimestampMinute = -1;
+            string? prevText = null;
+
+            await foreach (var segment in _recognizer.ProcessFileStreamingAsync(
+                samples, sourceLang, _settings.WhisperTemperature, ct))
+            {
+                // Дедупликация: пропускаем повторяющиеся сегменты (галлюцинации на тишине)
+                if (prevText != null && string.Equals(segment.Text, prevText, StringComparison.Ordinal))
+                    continue;
+                prevText = segment.Text;
+
+                segmentCount++;
+
+                // Таймстамп раз в минуту (ближайшая целая минута)
+                int currentMinute = (int)Math.Round(segment.Start.TotalMinutes);
+                string timestampLine = "";
+                if (currentMinute > lastTimestampMinute)
+                {
+                    lastTimestampMinute = currentMinute;
+                    var roundedTime = TimeSpan.FromMinutes(currentMinute);
+                    timestampLine = $"[{roundedTime:hh\\:mm\\:ss}]{Environment.NewLine}";
+                }
+
+                string line = timestampLine + segment.Text;
+
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    TranscriptBox.AppendText(line + Environment.NewLine);
+                    TranscriptBox.ScrollToEnd();
+                });
+
+                UpdateFileProgress(_settings.UiLanguage == "ru"
+                    ? $"Обработка: {fileName} — сегмент {segmentCount}, {segment.End:hh\\:mm\\:ss} / {totalDuration}"
+                    : $"Processing: {fileName} — segment {segmentCount}, {segment.End:hh\\:mm\\:ss} / {totalDuration}");
+
+                if (targetLang != null && targetLang.Code != sourceLang)
+                {
+                    EnqueueTranslation(segment.Text, sourceLang, targetLang.Code);
+                }
+            }
+
+            UpdateFileProgress(_settings.UiLanguage == "ru"
+                ? $"✔ Готово: {fileName} — {segmentCount} сегментов"
+                : $"✔ Done: {fileName} — {segmentCount} segments");
+        }
+        catch (OperationCanceledException)
+        {
+            UpdateFileProgress(_settings.UiLanguage == "ru" ? "Обработка отменена" : "Processing cancelled");
+        }
+        catch (Exception ex)
+        {
+            // Если это отмена из whisper.cpp — не показываем ошибку
+            if (ct.IsCancellationRequested)
+            {
+                UpdateFileProgress(_settings.UiLanguage == "ru" ? "Обработка отменена" : "Processing cancelled");
+            }
+            else
+            {
+                UpdateFileProgress("");
+                MessageBox.Show(this, ex.Message,
+                    _settings.UiLanguage == "ru" ? "Ошибка обработки файла" : "File processing error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+        finally
+        {
+            _isProcessingFile = false;
+            _fileProcessingCts?.Dispose();
+            _fileProcessingCts = null;
+            SetFileProcessingUiState(active: false);
+        }
+    }
+
+    private void SetFileProcessingUiState(bool active)
+    {
+        StartBtn.IsEnabled = !active;
+        OpenFileBtn.IsEnabled = !active;
+        StopBtn.IsEnabled = active || _capture.IsCapturing;
+        DevicesCombo.IsEnabled = !active;
+
+        if (!active)
+        {
+            // Скрыть прогресс через 10 секунд после окончания
+            var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(10) };
+            timer.Tick += (s, e) =>
+            {
+                timer.Stop();
+                if (!_isProcessingFile)
+                    FileProgressText.Visibility = Visibility.Collapsed;
+            };
+            timer.Start();
+        }
+    }
+
+    private void UpdateFileProgress(string text)
+    {
+        PostToUiIfAlive(() =>
+        {
+            FileProgressText.Text = text;
+            FileProgressText.Visibility = string.IsNullOrEmpty(text) ? Visibility.Collapsed : Visibility.Visible;
+        });
+    }
+
     private void Start_Click(object sender, RoutedEventArgs e)
     {
         var sourceLang = (SourceLangCombo.SelectedItem as LanguageInfo)?.Code;
@@ -770,6 +933,7 @@ public partial class MainWindow : Window
         StartBtn.IsEnabled = false;
         StopBtn.IsEnabled = true;
         RecordAudioCheckBox.IsEnabled = false;
+        OpenFileBtn.IsEnabled = false;
         
         _sessionStartTime = DateTime.Now;
         SessionTimerText.Text = "0:00:00";
@@ -780,10 +944,17 @@ public partial class MainWindow : Window
 
     private void Stop_Click(object sender, RoutedEventArgs e)
     {
+        if (_isProcessingFile)
+        {
+            _fileProcessingCts?.Cancel();
+            return;
+        }
+
         _capture.Stop();
         StartBtn.IsEnabled = true;
         StopBtn.IsEnabled = false;
         RecordAudioCheckBox.IsEnabled = true;
+        OpenFileBtn.IsEnabled = true;
 
         _sessionTimer.Stop();
         UpdateActiveRecordIndicator();
@@ -855,6 +1026,7 @@ public partial class MainWindow : Window
     {
         Interlocked.Exchange(ref _isShuttingDown, 1);
         _shutdownCts.Cancel();
+        _fileProcessingCts?.Cancel();
         _sessionTimer.Stop();
 
         _capture.AudioChunkReady -= OnAudioChunkReady;
