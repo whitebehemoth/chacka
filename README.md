@@ -6,7 +6,7 @@ transcribes it with **Whisper**, and translates on the fly.
 
 ---
 
-## [Portable ZIP win/x64](https://github.com/whitebehemoth/chacka/releases/download/v1.1.1/chacka-win-x64-portable.zip)
+## [Portable ZIP win/x64](https://github.com/whitebehemoth/chacka/releases/download/v.1.1.1/chacka-win-x64-portable.zip)
 
 ---
 
